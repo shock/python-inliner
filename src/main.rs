@@ -1,45 +1,77 @@
-use std::env;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::error::Error;
 use regex::Regex;
+use structopt::StructOpt;
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 4 {
-        println!("Usage: {} <input_file> <directory> <output_file>", args[0]);
-        return;
-    }
+#[derive(StructOpt, Debug)]
+#[structopt(name = "pyroll", about = "Python File Inliner")]
+struct Opt {
+    #[structopt(parse(from_os_str))]
+    input_file: PathBuf,
 
-    let input_file = &args[1];
-    let directory = &args[2];
-    let output_file = &args[3];
+    #[structopt(parse(from_os_str))]
+    output_file: PathBuf,
 
-    let contents = fs::read_to_string(input_file).unwrap();
-    let inlined_contents = inline_imports(contents, directory);
-    fs::write(output_file, inlined_contents).unwrap();
+    #[structopt(help = "Name of the module to be inlined", default_value = "")]
+    modules_name: String,
 }
 
-fn inline_imports(contents: String, directory: &str) -> String {
-    let import_regex = Regex::new(r"import\s+([a-zA-Z0-9_\.]+)").unwrap();
-    let mut inlined_contents = contents.clone();
+fn main() -> Result<(), Box<dyn Error>> {
+    let opt = Opt::from_args();
+    // get the input_file as a fully qualified path
+    let input_file = fs::canonicalize(&opt.input_file)?;
+    println!("Input file: {:?}", input_file);
 
-    for cap in import_regex.captures_iter(&contents) {
-        let import_path = cap[1].to_string();
-        let import_path_parts: Vec<&str> = import_path.split('.').collect();
-        let mut file_path = PathBuf::from(directory);
 
-        for part in import_path_parts {
-            file_path.push(part);
-        }
+    // get the working directory from the input file path
+    let working_dir = input_file.parent().unwrap();
+    println!("Working directory: {:?}", working_dir);
 
-        file_path.set_extension("py");
+    let content = inline_imports(&working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new())?;
+    fs::write(&opt.output_file, content)?;
+    println!("Inlined content written to {:?}", opt.output_file);
+    Ok(())
+}
 
-        if file_path.exists() {
-            let file_contents = fs::read_to_string(file_path).unwrap();
-            let inlined_file_contents = inline_imports(file_contents, directory);
-            inlined_contents = inlined_contents.replace(&format!("import {}", import_path), &inlined_file_contents);
-        }
+fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processed: &mut HashSet<PathBuf>) -> Result<String, Box<dyn Error>> {
+    if !processed.insert(file.to_path_buf()) {
+        return Err("Circular import detected".into());
     }
 
-    inlined_contents
+    let content = fs::read_to_string(file)?;
+    let import_regex = Regex::new(&format!(r"(?m)^(\s*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
+
+    let mut result = String::new();
+    let mut last_end = 0;
+
+    for cap in import_regex.captures_iter(&content) {
+        let indent = &cap[1];
+        let submodule = &cap[2];
+        let start = cap.get(0).unwrap().start();
+        let end = cap.get(0).unwrap().end();
+        println!("indent: {indent}, submodule: {submodule}, start: {start}, end: {end}");
+        result.push_str(&content[last_end..start]);
+
+        let module_path = workding_dir.join(modules_name.replace(".", "/") + &submodule.replace(".", "/") + ".py");
+        println!("module_path: {:?}", module_path);
+        if module_path.exists() {
+            println!("module_path exists");
+            let inlined_content = inline_imports(workding_dir, &module_path, modules_name, processed)?;
+            result.push_str(&format!("{indent}# Inlined module: {}{}\n", modules_name, submodule));
+            result.push_str(&indent);
+            result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
+            result.push_str("\n");
+        } else {
+            result.push_str(&content[start..end]);
+            result.push('\n');
+        }
+
+        last_end = end;
+    }
+
+    result.push_str(&content[last_end..]);
+    processed.remove(file);
+    Ok(result)
 }

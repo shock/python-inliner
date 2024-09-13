@@ -2,3 +2,4 @@
 .DS_Store
 .aider*
 target/
+__pycache__/
