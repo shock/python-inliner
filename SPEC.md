@@ -2,7 +2,7 @@
 
 ---
 
-**Project Title:** PyRoll
+**Project Title:** Python File Inliner
 
 **Objective:** Develop a command-line interface (CLI) application in Rust that inlines all imported Python files from a specified directory into a given Python script, retaining the module's functionality.
 

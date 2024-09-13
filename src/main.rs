@@ -6,7 +6,7 @@ use regex::Regex;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "pyroll", about = "Python File Inliner")]
+#[structopt(name = "python-inliner", about = "Python File Inliner - https://github.com/shock/python-inliner")]
 struct Opt {
     #[structopt(parse(from_os_str))]
     input_file: PathBuf,

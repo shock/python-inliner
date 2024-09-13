@@ -1,11 +1,11 @@
 [package]
-name = "pyroll"
+name = "python-inliner"
 version = "0.1.0"
 edition = "2021"
 authors = ["Bill Doughty <bill@doughty.com>"]
-description = "A command-line interface (CLI) tool for inlining Python modules from a specified directory into a given Python script."
+description = "A CLI tool for inlining Python files from a sub-directory into a given Python script as a single file."
 readme = "README.md"
-repository = "https://github.com/shock/pyroll"
+repository = "https://github.com/shock/python-inliner"
 license = "MIT"
 keywords = ["python", "cli", "inline", "module"]
 categories = ["command-line-utilities"]
