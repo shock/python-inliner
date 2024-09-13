@@ -1,5 +1,4 @@
 import sys
-import sys
 
 # ↓↓↓ inlined module: modules.class1
 

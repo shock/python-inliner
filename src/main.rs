@@ -81,19 +81,19 @@ fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processe
 }
 
 fn post_process_imports(content: &str) -> String {
-    let mut imports = Vec::new();
+    let mut imports = HashSet::new();
     let mut other_content = Vec::new();
     let import_regex = Regex::new(r"(?m)^\s*import\s+").unwrap();
 
     for line in content.lines() {
         if import_regex.is_match(line) {
-            imports.push(line.trim_start().to_string());
+            imports.insert(line.trim_start().to_string());
         } else {
             other_content.push(line.to_string());
         }
     }
 
-    let mut result = imports.join("\n");
+    let mut result = imports.into_iter().collect::<Vec<String>>().join("\n");
     result.push('\n');
     result.push_str(&other_content.join("\n"));
     result
