@@ -1,10 +1,11 @@
-import sys
 
 # ↓↓↓ inlined module: modules.class1
 
+import sys
 
 # ↓↓↓ inlined module: modules.class2
 class Class2:
+    import sys
 
     def __init__(self):
         self.name = "Class2"

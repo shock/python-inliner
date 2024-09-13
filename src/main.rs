@@ -17,8 +17,8 @@ struct Opt {
     #[structopt(help = "Name of the module to be inlined", default_value = "")]
     modules_name: String,
 
-    #[structopt(long, short = "s", help = "Suppress BEGIN and END comments in the output", takes_value = false)]
-    suppress_comments: bool,
+    #[structopt(long, short = "r", help = "Suppress comments in the output, and consolidate imports", takes_value = false)]
+    release_mode: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -30,7 +30,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let working_dir = input_file.parent().unwrap();
 
     let mut content = inline_imports(&working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
-    content = post_process_imports(&content);
+    if opt.release_mode {
+        content = post_process_imports(&content);
+    }
     fs::write(&opt.output_file, content)?;
     println!("Inlined content written to {:?}", opt.output_file);
     Ok(())
@@ -58,13 +60,13 @@ fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processe
         let module_path = workding_dir.join(modules_name.replace(".", "/") + &submodule.replace(".", "/") + ".py");
         if module_path.exists() {
             let inlined_content = inline_imports(workding_dir, &module_path, modules_name, processed, opt)?;
-            if !opt.suppress_comments {
+            if !opt.release_mode {
                 result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}{}\n", modules_name, submodule));
             }
             result.push_str(&indent);
             result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
             // result.push_str("\n");
-            if !opt.suppress_comments {
+            if !opt.release_mode {
                 result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}{}\n", modules_name, submodule));
             }
         } else {
@@ -83,7 +85,7 @@ fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processe
 fn post_process_imports(content: &str) -> String {
     let mut imports = HashSet::new();
     let mut other_content = Vec::new();
-    let import_regex = Regex::new(r"(?m)^\s*import\s+").unwrap();
+    let import_regex = Regex::new(r"(?m)^\s*(import|from)\s+").unwrap();
 
     for line in content.lines() {
         if import_regex.is_match(line) {
