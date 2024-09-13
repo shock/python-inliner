@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 # ↓↓↓ inlined module: modules.class1
 
 import sys

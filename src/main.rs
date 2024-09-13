@@ -18,7 +18,7 @@ struct Opt {
     modules_name: String,
 
     #[structopt(long, short = "r", help = "Suppress comments in the output, and consolidate imports", takes_value = false)]
-    release_mode: bool,
+    release: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let working_dir = input_file.parent().unwrap();
 
     let mut content = inline_imports(&working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
-    if opt.release_mode {
+    if opt.release {
         content = post_process_imports(&content);
     }
     fs::write(&opt.output_file, content)?;
@@ -60,13 +60,13 @@ fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processe
         let module_path = workding_dir.join(modules_name.replace(".", "/") + &submodule.replace(".", "/") + ".py");
         if module_path.exists() {
             let inlined_content = inline_imports(workding_dir, &module_path, modules_name, processed, opt)?;
-            if !opt.release_mode {
+            if !opt.release {
                 result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}{}\n", modules_name, submodule));
             }
             result.push_str(&indent);
             result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
             // result.push_str("\n");
-            if !opt.release_mode {
+            if !opt.release {
                 result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}{}\n", modules_name, submodule));
             }
         } else {
@@ -84,10 +84,22 @@ fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processe
 
 fn post_process_imports(content: &str) -> String {
     let mut imports = HashSet::new();
+    let mut header_content = Vec::new();
     let mut other_content = Vec::new();
     let import_regex = Regex::new(r"(?m)^\s*(import|from)\s+").unwrap();
+    let shebang_regex = Regex::new(r"^#!").unwrap();
 
-    for line in content.lines() {
+    let mut lines = content.lines().collect::<Vec<&str>>();
+
+    if let Some(first_line) = lines.first() {
+        if shebang_regex.is_match(first_line) {
+            header_content.push(first_line.to_string());
+            header_content.push("\n".to_string());
+            lines.remove(0);
+        }
+    }
+
+    for line in lines {
         if import_regex.is_match(line) {
             imports.insert(line.trim_start().to_string());
         } else {
@@ -95,7 +107,9 @@ fn post_process_imports(content: &str) -> String {
         }
     }
 
-    let mut result = imports.into_iter().collect::<Vec<String>>().join("\n");
+    let mut result = String::new();
+    result.push_str(&header_content.join("\n"));
+    result.push_str(&imports.into_iter().collect::<Vec<String>>().join("\n"));
     result.push('\n');
     result.push_str(&other_content.join("\n"));
     result
