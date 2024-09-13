@@ -1,7 +1,9 @@
+
 from modules.class1 import Class1
-from modules.submodules.class3 import Class3
+
 
 def main():
+    from modules.submodules.class3 import Class3
     c1 = Class1()
     print(c1.name)
     print(c1.class2.name)

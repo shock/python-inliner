@@ -42,7 +42,7 @@ fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processe
     }
 
     let content = fs::read_to_string(file)?;
-    let import_regex = Regex::new(&format!(r"(?m)^(\s*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
+    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
 
     let mut result = String::new();
     let mut last_end = 0;
@@ -68,7 +68,7 @@ fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processe
             }
         } else {
             result.push_str(&content[start..end]);
-            result.push('\n');
+            // result.push('\n');
         }
 
         last_end = end;

@@ -1,3 +1,4 @@
+
 from modules.class2 import Class2
 
 class Class1:

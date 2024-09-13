@@ -14,31 +14,26 @@ TARGET ?= $(HOME)/bin
 # Executable name
 EXECUTABLE = python-inliner
 
-test:
-	@echo $(MY_VAR)
-
 # Default target
 all: debug
-	@echo "Loaded environment variable: $(HOME)"
 
 # Build the project in debug mode
 debug:
 		$(CARGO) build
-		@echo "Debug build completed. Executable is located at $(DEBUG_DIR)/$(EXECUTABLE)"
 
 # Build the project in release mode
 release:
 		$(CARGO) build --release
-		@echo "Release build completed. Executable is located at $(RELEASE_DIR)/$(EXECUTABLE)"
 
 # Clean up build artifacts
 clean:
 		$(CARGO) clean
-		@echo "Build artifacts cleaned."
+
+test: debug
+	$(DEBUG_DIR)/$(EXECUTABLE) test/main.py test/main-inlined.py
 
 install: release
 		cp $(RELEASE_DIR)/$(EXECUTABLE) $(TARGET)
-		@echo "Executable installed to $(TARGET)"
 
 # Phony targets
 .PHONY: all debug release clean test
