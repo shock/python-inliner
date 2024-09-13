@@ -1,0 +1,5 @@
+"PyRoll" is a command-line interface (CLI) tool developed in Rust. Its primary function is to inline imported Python modules from a specified directory into a given Python script.
+
+The application takes three main inputs: an input Python file, a directory containing Python modules to be inlined, and an output file path. It processes the input file by identifying import statements that reference modules within the specified directory. For each identified import, the application recursively inlines the content of the referenced module, maintaining the original indentation and formatting. The result is a new consolidated Python file that contains the original script's content with all matching import statements replaced by their inlined module content.
+
+PyRoll aims to handle various scenarios gracefully, including error management for non-existent files or directories, circular imports, and syntax errors in the processed Python files. The specification ('SPEC.md') provides a detailed breakdown of the application's functionality, including input parameters, parsing logic, inline processing, and output generation.
