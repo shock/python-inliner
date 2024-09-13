@@ -29,7 +29,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // get the working directory from the input file path
     let working_dir = input_file.parent().unwrap();
 
-    let content = inline_imports(&working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
+    let mut content = inline_imports(&working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
+    content = post_process_imports(&content);
     fs::write(&opt.output_file, content)?;
     println!("Inlined content written to {:?}", opt.output_file);
     Ok(())
@@ -77,4 +78,23 @@ fn inline_imports(workding_dir: &Path, file: &Path, modules_name: &str, processe
     result.push_str(&content[last_end..]);
     processed.remove(file);
     Ok(result)
+}
+
+fn post_process_imports(content: &str) -> String {
+    let mut imports = Vec::new();
+    let mut other_content = Vec::new();
+    let import_regex = Regex::new(r"(?m)^\s*import\s+").unwrap();
+
+    for line in content.lines() {
+        if import_regex.is_match(line) {
+            imports.push(line.trim_start().to_string());
+        } else {
+            other_content.push(line.to_string());
+        }
+    }
+
+    let mut result = imports.join("\n");
+    result.push('\n');
+    result.push_str(&other_content.join("\n"));
+    result
 }
