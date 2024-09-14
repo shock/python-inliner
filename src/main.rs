@@ -109,7 +109,9 @@ fn post_process_imports(content: &str) -> String {
 
     let mut result = String::new();
     result.push_str(&header_content.join("\n"));
-    result.push_str(&imports.into_iter().collect::<Vec<String>>().join("\n"));
+    let mut imports_vec: Vec<String> = imports.into_iter().collect();
+    imports_vec.sort();
+    result.push_str(&imports_vec.join("\n"));
     result.push('\n');
     result.push_str(&other_content.join("\n"));
     result
