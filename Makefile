@@ -22,7 +22,7 @@ debug:
 		$(CARGO) build
 
 # Build the project in release mode
-release:
+release: test
 		$(CARGO) build --release
 
 # Clean up build artifacts

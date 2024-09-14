@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 from modules.class1 import Class1
 
 
