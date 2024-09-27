@@ -5,6 +5,9 @@ use std::error::Error;
 use regex::Regex;
 use structopt::StructOpt;
 
+#[cfg(test)]
+mod test_utils;
+
 #[derive(StructOpt, Debug)]
 #[structopt(name = "python-inliner", about = "Python File Inliner - https://github.com/shock/python-inliner")]
 struct Opt {
@@ -115,4 +118,108 @@ fn post_process_imports(content: &str) -> String {
     result.push('\n');
     result.push_str(&other_content.join("\n"));
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{MockFileSystem, setup_test_env};
+
+    fn mock_inline_imports(
+        mock_fs: &MockFileSystem,
+        working_dir: &Path,
+        file: &Path,
+        modules_name: &str,
+        processed: &mut HashSet<PathBuf>,
+        opt: &Opt,
+    ) -> Result<String, Box<dyn Error>> {
+        let content = mock_fs.read_file(file).ok_or("File not found")?;
+        let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
+
+        let mut result = String::new();
+        let mut last_end = 0;
+
+        for cap in import_regex.captures_iter(&content) {
+            let indent = &cap[1];
+            let submodule = &cap[2];
+            let start = cap.get(0).unwrap().start();
+            let end = cap.get(0).unwrap().end();
+            result.push_str(&content[last_end..start]);
+
+            let module_path = working_dir.join(modules_name.replace(".", "/") + &submodule.replace(".", "/") + ".py");
+            if mock_fs.file_exists(&module_path) {
+                let inlined_content = mock_inline_imports(mock_fs, working_dir, &module_path, modules_name, processed, opt)?;
+                if !opt.release {
+                    result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}{}\n", modules_name, submodule));
+                }
+                result.push_str(&indent);
+                result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
+                if !opt.release {
+                    result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}{}\n", modules_name, submodule));
+                }
+            } else {
+                result.push_str(&content[start..end]);
+            }
+
+            last_end = end;
+        }
+
+        result.push_str(&content[last_end..]);
+        processed.remove(file);
+        Ok(result)
+    }
+
+    #[test]
+    fn test_inline_imports_simple() {
+        let mock_fs = setup_test_env();
+        mock_fs.add_file("/test/main.py", "from modules import module1\n\nprint('Hello')");
+        mock_fs.add_file("/test/modules/module1.py", "def func1():\n    print('Function 1')");
+
+        let opt = Opt {
+            input_file: PathBuf::from("/test/main.py"),
+            output_file: PathBuf::from("/test/main_inlined.py"),
+            modules_name: "modules".to_string(),
+            release: false,
+        };
+
+        let result = mock_inline_imports(
+            &mock_fs,
+            Path::new("/test"),
+            Path::new("/test/main.py"),
+            "modules",
+            &mut HashSet::new(),
+            &opt,
+        ).unwrap();
+
+        assert_eq!(result, "# ↓↓↓ inlined module: modules\ndef func1():\n    print('Function 1')\n# ↑↑↑ inlined module: modules\n\nprint('Hello')");
+    }
+
+    #[test]
+    fn test_post_process_imports() {
+        let input = r#"#!/usr/bin/env python3
+import sys
+from os import path
+import re
+
+def main():
+    print('Hello')
+
+if __name__ == '__main__':
+    main()
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+from os import path
+import re
+import sys
+
+def main():
+    print('Hello')
+
+if __name__ == '__main__':
+    main()
+"#;
+
+        assert_eq!(post_process_imports(input), expected);
+    }
 }
