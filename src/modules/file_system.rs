@@ -2,39 +2,51 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::io;
 
-pub trait FileSystemLike {
-    fn canonicalize<P>(path: P) -> io::Result<PathBuf>;
-    fn write<P, C>(path: P, contents: C) -> io::Result<()>;
-    fn read_to_string<P>(path: P) -> io::Result<String>;
-    fn mkdir_p<P>(path: P) -> io::Result<()>;
-    fn remove_file<P>(path: P) -> io::Result<()>;
-    fn remove_dir<P>(path: P) -> io::Result<()>;
+pub trait FileSystem {
+    #[allow(unused)]
+    fn canonicalize<P: AsRef<Path>>(&self, path: P) -> io::Result<PathBuf>;
+    #[allow(unused)]
+    fn write<P: AsRef<Path>, C: AsRef<[u8]>>(&self, path: P, contents: C) -> io::Result<()>;
+    #[allow(unused)]
+    fn read_to_string<P: AsRef<Path>>(&self, path: P) -> io::Result<String>;
+    #[allow(unused)]
+    fn mkdir_p<P: AsRef<Path>>(&self, path: P) -> io::Result<()>;
+    #[allow(unused)]
+    fn remove_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()>;
+    #[allow(unused)]
+    fn remove_dir<P: AsRef<Path>>(&self, path: P) -> io::Result<()>;
 }
 
-pub struct FileSystem {}
+pub struct RealFileSystem {}
 
-impl FileSystemLike for FileSystem {
-    fn canonicalize<P>(path: P) -> io::Result<PathBuf> {
+impl RealFileSystem {
+    pub fn new() -> Self {
+        RealFileSystem {}
+    }
+}
+
+impl FileSystem for RealFileSystem {
+    fn canonicalize<P: AsRef<Path>>(&self, path: P) -> io::Result<PathBuf> {
         fs::canonicalize(path)
     }
 
-    fn write<P, C>(path: P, contents: C) -> io::Result<()> {
+    fn write<P: AsRef<Path>, C: AsRef<[u8]>>(&self, path: P, contents: C) -> io::Result<()> {
         fs::write(path, contents)
     }
 
-    fn read_to_string<P>(path: P) -> io::Result<String> {
+    fn read_to_string<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
         fs::read_to_string(path)
     }
 
-    fn mkdir_p<P>(path: P) -> io::Result<()> {
+    fn mkdir_p<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         fs::create_dir_all(path)
     }
 
-    fn remove_file<P>(path: P) -> io::Result<()> {
+    fn remove_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         fs::remove_file(path)
     }
 
-    fn remove_dir<P>(path: P) -> io::Result<()> {
+    fn remove_dir<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         fs::remove_dir(path)
     }
 }

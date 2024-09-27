@@ -30,6 +30,7 @@ clean:
 		$(CARGO) clean
 
 test: debug
+	rm -f test/main-inlined.py
 	$(DEBUG_DIR)/$(EXECUTABLE) test/main.py test/main-inlined.py
 
 install: release
