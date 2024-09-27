@@ -1,9 +1,14 @@
 use std::collections::HashSet;
-use std::fs;
+use std::fs as fs;
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use regex::Regex;
 use structopt::StructOpt;
+mod modules {
+    pub mod file_system;
+}
+use modules::file_system::FileSystemLike;
+use modules::file_system::FileSystem;
 
 #[cfg(test)]
 mod test_utils;
