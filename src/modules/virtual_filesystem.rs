@@ -238,9 +238,10 @@ impl FileSystem for VirtualFileSystem {
 
     fn exists<P: AsRef<Path>>(&mut self, path: P) -> io::Result<bool> {
         let components = self.resolve_path(path)?;
-        match self.get_node(&components)? {
-            VirtualNode::File(_) => Ok(true),
-            VirtualNode::Directory(_) => Ok(true),
+        let node = self.get_node(&components);
+        match node {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
         }
     }
 
@@ -253,15 +254,29 @@ mod tests {
     #[test]
     fn test_virtual_filesystem() {
         let mut fs = VirtualFileSystem::new();
-        fs.mkdir_p("/test").unwrap();
+        // fs.mkdir_p("/test").unwrap();
         fs.mkdir_p("/test/dir1").unwrap();
         fs.mkdir_p("/test/dir2").unwrap();
         fs.write("/test/file1", "Hello").unwrap();
         fs.write("/test/dir1/file2", "World").unwrap();
         fs.write("/test/dir2/file3", "!").unwrap();
 
+        assert_eq!(fs.exists("/test").unwrap(), true);
+        assert_eq!(fs.exists("/test/file1").unwrap(), true);
+        assert_eq!(fs.exists("/test/dir1").unwrap(), true);
+        assert_eq!(fs.is_file("/test/file1").unwrap(), true);
+        assert_eq!(fs.is_dir("/test/file1").unwrap(), false);
+        assert_eq!(fs.is_dir("/test/dir1").unwrap(), true);
+        assert_eq!(fs.is_file("/test/dir1").unwrap(), false);
+        assert_eq!(fs.exists("/test/dir1").unwrap(), true);
+        assert_eq!(fs.exists("/test/dir3").unwrap(), false);
+
         assert_eq!(fs.read_to_string("/test/file1").unwrap(), "Hello");
         assert_eq!(fs.read_to_string("/test/dir1/file2").unwrap(), "World");
         assert_eq!(fs.read_to_string("/test/dir2/file3").unwrap(), "!");
+        assert_eq!(fs.read_to_string("test/file1").unwrap(), "Hello");
+        assert_eq!(fs.read_to_string("test/dir1/file2").unwrap(), "World");
+        assert_eq!(fs.read_to_string("test/dir2/file3").unwrap(), "!");
+        fs.read_to_string("unknown").unwrap_err();
     }
 }
