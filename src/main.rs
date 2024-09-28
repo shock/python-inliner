@@ -1,14 +1,17 @@
 use std::collections::HashSet;
-// use std::fs as fs;
+use std::fs as fs;
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use regex::Regex;
 use structopt::StructOpt;
 mod modules {
     pub mod file_system;
+    pub mod virtual_filesystem;
 }
+
 use modules::file_system::RealFileSystem;
 use modules::file_system::FileSystem;
+
 
 #[cfg(test)]
 mod test_utils;
@@ -31,18 +34,20 @@ struct Opt {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
-    let fs = RealFileSystem::new();
+    // get current working directory
+    let current_dir = fs::canonicalize(".")?;
+    let fs = RealFileSystem::new(current_dir);
     run(opt, fs)
 }
 
-fn run<FS: FileSystem>(opt: Opt, fs: FS) -> Result<(), Box<dyn Error>> {
+fn run<FS: FileSystem>(opt: Opt, mut fs: FS) -> Result<(), Box<dyn Error>> {
     // get the input_file as a fully qualified path
     let input_file = fs.canonicalize(&opt.input_file)?;
 
     // get the working directory from the input file path
     let working_dir = input_file.parent().unwrap();
 
-    let mut content = inline_imports(&fs, &working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
+    let mut content = inline_imports(&mut fs, &working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
     if opt.release {
         content = post_process_imports(&content);
     }
@@ -52,7 +57,7 @@ fn run<FS: FileSystem>(opt: Opt, fs: FS) -> Result<(), Box<dyn Error>> {
 }
 
 
-fn inline_imports<FS: FileSystem>(fs: &FS, workding_dir: &Path, file: &Path, modules_name: &str, processed: &mut HashSet<PathBuf>, opt: &Opt) -> Result<String, Box<dyn Error>> {
+fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path, modules_name: &str, processed: &mut HashSet<PathBuf>, opt: &Opt) -> Result<String, Box<dyn Error>> {
     if !processed.insert(file.to_path_buf()) {
         println!("WARNING: already inlined {}.  Skipping...", file.display());
         return Ok(String::new());
@@ -129,6 +134,14 @@ fn post_process_imports(content: &str) -> String {
     result.push('\n');
     result.push_str(&other_content.join("\n"));
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{MockFileSystem, setup_test_env};
+    use crate::modules::file_system::RealFileSystem;
+    use crate::modules::virtual_filesystem::VirtualFileSystem;
 }
 
 // #[cfg(test)]
