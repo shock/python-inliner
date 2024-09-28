@@ -55,47 +55,55 @@ fn run<FS: FileSystem>(opt: Opt, fs: &mut FS) -> Result<(), Box<dyn Error>> {
 
 
 fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path, modules_name: &str, processed: &mut HashSet<PathBuf>, opt: &Opt) -> Result<String, Box<dyn Error>> {
-    if !processed.insert(file.to_path_buf()) {
-        println!("WARNING: already inlined {}.  Skipping...", file.display());
-        return Ok(String::new());
-    }
-
     let content = fs.read_to_string(file)?;
-    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+?\n$", regex::escape(modules_name)))?;
+    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
+    // let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
 
     let mut result = String::new();
     let mut last_end = 0;
-
-    for cap in import_regex.captures_iter(&content) {
+    let captures = import_regex.captures_iter(&content);
+    for cap in captures {
+        println!("capture: {:?}", &cap[0]);
         let indent = &cap[1];
         let submodule = &cap[2];
         let start = cap.get(0).unwrap().start();
-        let end = cap.get(0).unwrap().end();
+        let mut end = cap.get(0).unwrap().end();
         result.push_str(&content[last_end..start]);
 
         let module_path = workding_dir.join(modules_name.replace(".", "/") + &submodule.replace(".", "/") + ".py");
-        println!("working_dir: {:?}, module_path: {:?}", workding_dir, module_path);
         if fs.exists(&module_path).unwrap() {
-            let inlined_content = inline_imports(fs, workding_dir, &module_path, modules_name, processed, opt)?;
-            if !opt.release {
-                result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}{}\n", modules_name, submodule));
+            println!("working_dir: {:?}, module_path: {:?}", workding_dir, module_path.to_path_buf());
+            println!("processed before: {:?}", processed);
+            if processed.insert(module_path.to_path_buf()) {
+                let inlined_content = inline_imports(fs, workding_dir, &module_path, modules_name, processed, opt)?;
+
+                if !opt.release {
+                    result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}{}\n", modules_name, submodule));
+                }
+                result.push_str(&indent);
+                result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
+                // result.push_str("\n");
+                if !opt.release {
+                    result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}{}", modules_name, submodule));
+                }
+            } else {
+                println!("WARNING: already inlined {}.  Skipping...", module_path.display());
+                if !opt.release {
+                    result.push_str(&format!("{indent}# →→ {}{} ←← already inlined", modules_name, submodule));
+                } else {
+                    end += 1;  // remove the newline from the end of the import statement
+                }
             }
-            result.push_str(&indent);
-            result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
-            // result.push_str("\n");
-            if !opt.release {
-                result.push_str(&format!("{indent}# ↑↑↑ inlined module: {}{}\n", modules_name, submodule));
-            }
+            println!("processed after: {:?}", processed);
         } else {
             result.push_str(&content[start..end]);
-            // result.push('\n');
         }
 
         last_end = end;
     }
 
     result.push_str(&content[last_end..]);
-    processed.remove(file);
+    // processed.remove(file);
     Ok(result)
 }
 
@@ -144,6 +152,7 @@ mod tests {
 from modules.module1 import func1
 
 def main():
+    from modules.module1 import func2
     print('Hello')
 
 if __name__ == '__main__':
@@ -158,9 +167,11 @@ if __name__ == '__main__':
 # ↓↓↓ inlined module: modules.module1
 def func1():
     print('Function 1')
+
 # ↑↑↑ inlined module: modules.module1
 
 def main():
+    # →→ modules.module1 ←← already inlined
     print('Hello')
 
 if __name__ == '__main__':

@@ -11,4 +11,5 @@ def main():
     print(c3.name)
 
 if __name__ == "__main__":
+    from modules.submodules.class3 import Class3
     main()

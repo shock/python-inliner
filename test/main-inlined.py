@@ -12,7 +12,6 @@ class Class2:
 
 # ↑↑↑ inlined module: modules.class2
 
-
 class Class1:
     def __init__(self):
         self.name = "Class1"
@@ -21,14 +20,12 @@ class Class1:
 # ↑↑↑ inlined module: modules.class1
 
 
-
 def main():
     # ↓↓↓ inlined module: modules.submodules.class3
     class Class3:
         def __init__(self):
             self.name = "Class3"
     # ↑↑↑ inlined module: modules.submodules.class3
-
     c1 = Class1()
     print(c1.name)
     print(c1.class2.name)
@@ -36,4 +33,5 @@ def main():
     print(c3.name)
 
 if __name__ == "__main__":
+    # →→ modules.submodules.class3 ←← already inlined
     main()
