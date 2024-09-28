@@ -22,8 +22,8 @@ struct Opt {
     #[structopt(parse(from_os_str))]
     output_file: PathBuf,
 
-    #[structopt(help = "Name of the module to be inlined", default_value = "")]
-    modules_name: String,
+    #[structopt(help = "comma-separated list module names to be inlined", default_value = "")]
+    module_names: String,
 
     #[structopt(long, short = "r", help = "Suppress comments in the output, and consolidate imports", takes_value = false)]
     release: bool,
@@ -44,7 +44,11 @@ fn run<FS: FileSystem>(opt: Opt, fs: &mut FS) -> Result<(), Box<dyn Error>> {
     // get the working directory from the input file path
     let working_dir = input_file.parent().unwrap();
 
-    let mut content = inline_imports(fs, &working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
+    // split the module names into a vector
+    let module_names = opt.module_names.split(",").map(|s| s.trim().to_string()).collect::<Vec<String>>();
+    // rejoin the module names into a single string using a pipe character
+    let module_names = module_names.join("|");
+    let mut content = inline_imports(fs, &working_dir, &opt.input_file, &module_names, &mut HashSet::new(), &opt)?;
     if opt.release {
         content = post_process_imports(&content);
     }
@@ -53,10 +57,9 @@ fn run<FS: FileSystem>(opt: Opt, fs: &mut FS) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-
-fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path, modules_name: &str, processed: &mut HashSet<PathBuf>, opt: &Opt) -> Result<String, Box<dyn Error>> {
+fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path, module_names: &str, processed: &mut HashSet<PathBuf>, opt: &Opt) -> Result<String, Box<dyn Error>> {
     let content = fs.read_to_string(file)?;
-    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
+    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+((?:{})\S*)\s+import\s+.+$", module_names))?;
     // let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
 
     let mut result = String::new();
@@ -70,26 +73,26 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path,
         let mut end = cap.get(0).unwrap().end();
         result.push_str(&content[last_end..start]);
 
-        let module_path = workding_dir.join(modules_name.replace(".", "/") + &submodule.replace(".", "/") + ".py");
+        let module_path = workding_dir.join(format!("{}.py",submodule.replace(".", "/")));
+        println!("working_dir: {:?}, module_path: {:?}", workding_dir, module_path.to_path_buf());
         if fs.exists(&module_path).unwrap() {
-            println!("working_dir: {:?}, module_path: {:?}", workding_dir, module_path.to_path_buf());
             println!("processed before: {:?}", processed);
             if processed.insert(module_path.to_path_buf()) {
-                let inlined_content = inline_imports(fs, workding_dir, &module_path, modules_name, processed, opt)?;
+                let inlined_content = inline_imports(fs, workding_dir, &module_path, module_names, processed, opt)?;
 
                 if !opt.release {
-                    result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}{}\n", modules_name, submodule));
+                    result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}\n", submodule));
                 }
                 result.push_str(&indent);
                 result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
                 // result.push_str("\n");
                 if !opt.release {
-                    result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}{}", modules_name, submodule));
+                    result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}", submodule));
                 }
             } else {
                 println!("WARNING: already inlined {}.  Skipping...", module_path.display());
                 if !opt.release {
-                    result.push_str(&format!("{indent}# →→ {}{} ←← already inlined", modules_name, submodule));
+                    result.push_str(&format!("{indent}# →→ {} ←← already inlined", submodule));
                 } else {
                     end += 1;  // remove the newline from the end of the import statement
                 }
@@ -188,7 +191,7 @@ if __name__ == '__main__':
         let opt = Opt {
             input_file: PathBuf::from("/test/main.py"),
             output_file: PathBuf::from("/test/main_inlined.py"),
-            modules_name: "".to_string(),
+            module_names: "".to_string(),
             release: false,
         };
         run(
