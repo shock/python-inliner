@@ -146,6 +146,20 @@ fn post_process_imports(content: &str) -> String {
     result
 }
 
+// use pyo3::prelude::*;
+// use pyo3::types::PyList;
+
+// fn get_sys_path() -> PyResult<Vec<String>> {
+//     Python::with_gil(|py| {
+//         let sys = py.import("sys")?;
+//         let sys_path: &PyList = sys.get("path")?.downcast()?;
+//         let paths: Vec<String> = sys_path.iter()
+//             .map(|p| p.to_string())
+//             .collect();
+//         Ok(paths)
+//     })
+// }
+
 #[cfg(test)]
 mod tests {
     use super::*;

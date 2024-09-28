@@ -18,7 +18,15 @@ class Class1:
         self.class2 = Class2()
 
 # ↑↑↑ inlined module: modules.class1
+# ↓↓↓ inlined module: tacos.taco
+class Taco:
+    def __init__(self, name):
+        self.name = name
 
+    def __str__(self):
+        return f"Taco: {self.name}"
+# ↑↑↑ inlined module: tacos.taco
+from aliens.alien import Alien
 
 def main():
     # ↓↓↓ inlined module: modules.submodules.class3
@@ -31,6 +39,10 @@ def main():
     print(c1.class2.name)
     c3 = Class3()
     print(c3.name)
+    taco = Taco("Taco")
+    print(taco)
+    alien = Alien("Alien")
+    print(alien)
 
 if __name__ == "__main__":
     # →→ modules.submodules.class3 ←← already inlined
