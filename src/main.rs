@@ -33,18 +33,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
     // get current working directory
     let current_dir = fs::canonicalize(".")?;
-    let fs = RealFileSystem::new(current_dir);
-    run(opt, fs)
+    let mut fs = RealFileSystem::new(current_dir);
+    run(opt, &mut fs)
 }
 
-fn run<FS: FileSystem>(opt: Opt, mut fs: FS) -> Result<(), Box<dyn Error>> {
+fn run<FS: FileSystem>(opt: Opt, fs: &mut FS) -> Result<(), Box<dyn Error>> {
     // get the input_file as a fully qualified path
     let input_file = fs.canonicalize(&opt.input_file)?;
 
     // get the working directory from the input file path
     let working_dir = input_file.parent().unwrap();
 
-    let mut content = inline_imports(&mut fs, &working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
+    let mut content = inline_imports(fs, &working_dir, &opt.input_file, &opt.modules_name, &mut HashSet::new(), &opt)?;
     if opt.release {
         content = post_process_imports(&content);
     }
@@ -61,7 +61,7 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path,
     }
 
     let content = fs.read_to_string(file)?;
-    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
+    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+?\n$", regex::escape(modules_name)))?;
 
     let mut result = String::new();
     let mut last_end = 0;
@@ -74,7 +74,8 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path,
         result.push_str(&content[last_end..start]);
 
         let module_path = workding_dir.join(modules_name.replace(".", "/") + &submodule.replace(".", "/") + ".py");
-        if module_path.exists() {
+        println!("working_dir: {:?}, module_path: {:?}", workding_dir, module_path);
+        if fs.exists(&module_path).unwrap() {
             let inlined_content = inline_imports(fs, workding_dir, &module_path, modules_name, processed, opt)?;
             if !opt.release {
                 result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}{}\n", modules_name, submodule));
@@ -83,7 +84,7 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path,
             result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
             // result.push_str("\n");
             if !opt.release {
-                result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}{}\n", modules_name, submodule));
+                result.push_str(&format!("{indent}# ↑↑↑ inlined module: {}{}\n", modules_name, submodule));
             }
         } else {
             result.push_str(&content[start..end]);
@@ -130,21 +131,97 @@ fn post_process_imports(content: &str) -> String {
     result.push_str(&imports_vec.join("\n"));
     result.push('\n');
     result.push_str(&other_content.join("\n"));
+    result.push('\n');
     result
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::test_utils::{MockFileSystem, setup_test_env};
-//     use crate::modules::file_system::RealFileSystem;
-//     use crate::modules::virtual_filesystem::VirtualFileSystem;
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::virtual_filesystem::VirtualFileSystem;
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::test_utils::{MockFileSystem, setup_test_env};
+    const MAIN_PY_CONTENT: &str = r#"#!/usr/bin/env python3
+from modules.module1 import func1
+
+def main():
+    print('Hello')
+
+if __name__ == '__main__':
+    main()
+"#;
+
+    const MODULE1_PY_CONTENT: &str = r#"def func1():
+    print('Function 1')
+"#;
+
+    const INLINED_CONTENT: &str = r#"#!/usr/bin/env python3
+# ↓↓↓ inlined module: modules.module1
+def func1():
+    print('Function 1')
+# ↑↑↑ inlined module: modules.module1
+
+def main():
+    print('Hello')
+
+if __name__ == '__main__':
+    main()
+"#;
+
+    #[test]
+    fn test_inline_imports_simple() {
+        let mut mock_fs = VirtualFileSystem::new();
+        mock_fs.mkdir_p("/test/modules").unwrap();
+        mock_fs.write("/test/main.py", MAIN_PY_CONTENT).unwrap();
+        mock_fs.write("/test/modules/module1.py", MODULE1_PY_CONTENT).unwrap();
+
+        let opt = Opt {
+            input_file: PathBuf::from("/test/main.py"),
+            output_file: PathBuf::from("/test/main_inlined.py"),
+            modules_name: "".to_string(),
+            release: false,
+        };
+        run(
+            opt,
+            &mut mock_fs,
+        ).unwrap();
+
+        let result = mock_fs.read_to_string("/test/main_inlined.py").unwrap();
+        assert_eq!(result, INLINED_CONTENT);
+    }
+
+    #[test]
+    fn test_post_process_imports() {
+        let input = r#"#!/usr/bin/env python3
+import sys
+from os import path
+
+def main():
+    print('Hello')
+
+import re
+
+if __name__ == '__main__':
+    main()
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+
+from os import path
+import re
+import sys
+
+def main():
+    print('Hello')
+
+
+if __name__ == '__main__':
+    main()
+"#;
+
+        assert_eq!(post_process_imports(input), expected);
+    }
+}
+
 
 //     fn mock_inline_imports(
 //         mock_fs: &MockFileSystem,
@@ -189,58 +266,3 @@ fn post_process_imports(content: &str) -> String {
 //         processed.remove(file);
 //         Ok(result)
 //     }
-
-//     #[test]
-//     fn test_inline_imports_simple() {
-//         let mock_fs = setup_test_env();
-//         mock_fs.add_file("/test/main.py", "from modules import module1\n\nprint('Hello')");
-//         mock_fs.add_file("/test/modules/module1.py", "def func1():\n    print('Function 1')");
-
-//         let opt = Opt {
-//             input_file: PathBuf::from("/test/main.py"),
-//             output_file: PathBuf::from("/test/main_inlined.py"),
-//             modules_name: "modules".to_string(),
-//             release: false,
-//         };
-
-//         let result = mock_inline_imports(
-//             &mock_fs,
-//             Path::new("/test"),
-//             Path::new("/test/main.py"),
-//             "modules",
-//             &mut HashSet::new(),
-//             &opt,
-//         ).unwrap();
-
-//         assert_eq!(result, "# ↓↓↓ inlined module: modules\ndef func1():\n    print('Function 1')\n# ↑↑↑ inlined module: modules\n\nprint('Hello')");
-//     }
-
-//     #[test]
-//     fn test_post_process_imports() {
-//         let input = r#"#!/usr/bin/env python3
-// import sys
-// from os import path
-// import re
-
-// def main():
-//     print('Hello')
-
-// if __name__ == '__main__':
-//     main()
-// "#;
-
-//         let expected = r#"#!/usr/bin/env python3
-// from os import path
-// import re
-// import sys
-
-// def main():
-//     print('Hello')
-
-// if __name__ == '__main__':
-//     main()
-// "#;
-
-//         assert_eq!(post_process_imports(input), expected);
-//     }
-// }
