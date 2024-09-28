@@ -199,6 +199,51 @@ impl FileSystem for VirtualFileSystem {
             Err(io::Error::new(io::ErrorKind::Other, "File not found"))
         }
     }
+
+    fn is_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<bool> {
+        let components = self.resolve_path(path)?;
+        let parent_components = &components[..components.len() - 1];
+        let filename = components.last().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))?;
+
+        let mut parent_node = self.get_node_mut(parent_components)?;
+
+        if let VirtualNode::Directory(parent_dir) = &mut parent_node {
+            match parent_dir.contents.get(filename) {
+                Some(VirtualNode::File(_)) => Ok(true),
+                Some(VirtualNode::Directory(_)) => Ok(false),
+                None => Err(io::Error::new(io::ErrorKind::NotFound, "File not found")),
+            }
+        } else {
+            Err(io::Error::new(io::ErrorKind::Other, "File not found"))
+        }
+    }
+
+    fn is_dir<P: AsRef<Path>>(&mut self, path: P) -> io::Result<bool> {
+        let components = self.resolve_path(path)?;
+        let parent_components = &components[..components.len() - 1];
+        let dirname = components.last().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))?;
+
+        let mut parent_node = self.get_node_mut(parent_components)?;
+
+        if let VirtualNode::Directory(parent_dir) = &mut parent_node {
+            match parent_dir.contents.get(dirname) {
+                Some(VirtualNode::Directory(_)) => Ok(true),
+                Some(VirtualNode::File(_)) => Ok(false),
+                None => Err(io::Error::new(io::ErrorKind::NotFound, "Directory not found")),
+            }
+        } else {
+            Err(io::Error::new(io::ErrorKind::Other, "Directory not found"))
+        }
+    }
+
+    fn exists<P: AsRef<Path>>(&mut self, path: P) -> io::Result<bool> {
+        let components = self.resolve_path(path)?;
+        match self.get_node(&components)? {
+            VirtualNode::File(_) => Ok(true),
+            VirtualNode::Directory(_) => Ok(true),
+        }
+    }
+
 }
 
 #[cfg(test)]
