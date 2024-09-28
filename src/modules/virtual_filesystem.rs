@@ -167,9 +167,12 @@ impl FileSystem for VirtualFileSystem {
 
         let mut parent_node = self.get_node_mut(parent_components)?;
 
-        if let VirtualNode::Directory(dir) = &mut parent_node {
-            match dir.contents.get_mut(filename) {
-                Some(VirtualNode::File(_)) => Ok(()),
+        if let VirtualNode::Directory(paren_dir) = &mut parent_node {
+            match paren_dir.contents.get_mut(filename) {
+                Some(VirtualNode::File(_)) => {
+                    paren_dir.contents.remove(filename);
+                    Ok(())
+                },
                 Some(VirtualNode::Directory(_)) => Err(io::Error::new(io::ErrorKind::Other, "Is a directory")),
                 None => Err(io::Error::new(io::ErrorKind::NotFound, "File not found")),
             }
@@ -270,6 +273,10 @@ mod tests {
         assert_eq!(fs.is_file("/test/dir1").unwrap(), false);
         assert_eq!(fs.exists("/test/dir1").unwrap(), true);
         assert_eq!(fs.exists("/test/dir3").unwrap(), false);
+        fs.mkdir_p("/test/dir3").unwrap();
+        assert_eq!(fs.exists("/test/dir3").unwrap(), true);
+        fs.remove_dir("/test/dir3").unwrap();
+        assert_eq!(fs.exists("/test/dir3").unwrap(), false);
 
         assert_eq!(fs.read_to_string("/test/file1").unwrap(), "Hello");
         assert_eq!(fs.read_to_string("/test/dir1/file2").unwrap(), "World");
@@ -277,6 +284,10 @@ mod tests {
         assert_eq!(fs.read_to_string("test/file1").unwrap(), "Hello");
         assert_eq!(fs.read_to_string("test/dir1/file2").unwrap(), "World");
         assert_eq!(fs.read_to_string("test/dir2/file3").unwrap(), "!");
+        assert_eq!(fs.remove_dir("test/dir2").unwrap_err().kind(), io::ErrorKind::Other); // directory not empty
+        assert_eq!(fs.remove_file("test/dir2/file3").unwrap(), ());
+        assert_eq!(fs.read_to_string("test/dir2/file3").unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert_eq!(fs.remove_dir("test/dir3").unwrap_err().kind(), io::ErrorKind::NotFound);
         fs.read_to_string("unknown").unwrap_err();
     }
 }

@@ -13,9 +13,6 @@ use modules::file_system::RealFileSystem;
 use modules::file_system::FileSystem;
 
 
-#[cfg(test)]
-mod test_utils;
-
 #[derive(StructOpt, Debug)]
 #[structopt(name = "python-inliner", about = "Python File Inliner - https://github.com/shock/python-inliner")]
 struct Opt {
