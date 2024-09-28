@@ -136,13 +136,13 @@ fn post_process_imports(content: &str) -> String {
     result
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_utils::{MockFileSystem, setup_test_env};
-    use crate::modules::file_system::RealFileSystem;
-    use crate::modules::virtual_filesystem::VirtualFileSystem;
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::test_utils::{MockFileSystem, setup_test_env};
+//     use crate::modules::file_system::RealFileSystem;
+//     use crate::modules::virtual_filesystem::VirtualFileSystem;
+// }
 
 // #[cfg(test)]
 // mod tests {

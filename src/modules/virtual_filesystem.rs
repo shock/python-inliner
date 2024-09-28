@@ -25,6 +25,7 @@ enum VirtualNode {
 }
 
 impl VirtualFileSystem {
+    #[allow(unused)]
     pub fn new() -> Self {
         VirtualFileSystem {
             root: VirtualNode::Directory(VirtualDirectory { contents: HashMap::new() }),
@@ -175,25 +176,6 @@ impl FileSystem for VirtualFileSystem {
         } else {
             Err(io::Error::new(io::ErrorKind::Other, "File not found"))
         }
-
-        // let components = self.resolve_path(path)?;
-        // let parent_components = &components[..components.len() - 1];
-        // let filename = components.last().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))?;
-
-        // let mut current_node = &mut self.root;
-
-        // for component in parent_components {
-        //     match current_node.contents.get_mut(component) {
-        //         Some(VirtualNode::Directory(dir)) => current_node = dir,
-        //         _ => return Err(io::Error::new(io::ErrorKind::NotFound, "Path not found")),
-        //     }
-        // }
-
-        // match current_node.contents.remove(filename) {
-        //     Some(VirtualNode::File(_)) => Ok(()),
-        //     Some(VirtualNode::Directory(_)) => Err(io::Error::new(io::ErrorKind::Other, "Is a directory")),
-        //     None => Err(io::Error::new(io::ErrorKind::NotFound, "File not found")),
-        // }
     }
 
     fn remove_dir<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
@@ -212,35 +194,10 @@ impl FileSystem for VirtualFileSystem {
                 Some(VirtualNode::Directory(_)) => Err(io::Error::new(io::ErrorKind::Other, "Directory not empty")),
                 Some(VirtualNode::File(_)) => Err(io::Error::new(io::ErrorKind::Other, "Not a directory")),
                 None => Err(io::Error::new(io::ErrorKind::NotFound, "Directory not found")),
-                // Some(VirtualNode::File(_)) => Ok(()),
-                // Some(VirtualNode::Directory(_)) => Err(io::Error::new(io::ErrorKind::Other, "Is a directory")),
-                // None => Err(io::Error::new(io::ErrorKind::NotFound, "File not found")),
             }
         } else {
             Err(io::Error::new(io::ErrorKind::Other, "File not found"))
         }
-        // let components = self.resolve_path(path)?;
-        // let parent_components = &components[..components.len() - 1];
-        // let dirname = components.last().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))?;
-
-        // let mut current_dir = &mut self.root;
-
-        // for component in parent_components {
-        //     match current_dir.contents.get_mut(component) {
-        //         Some(VirtualNode::Directory(dir)) => current_dir = dir,
-        //         _ => return Err(io::Error::new(io::ErrorKind::NotFound, "Path not found")),
-        //     }
-        // }
-
-        // match current_dir.contents.get(dirname) {
-        //     Some(VirtualNode::Directory(dir)) if dir.contents.is_empty() => {
-        //         current_dir.contents.remove(dirname);
-        //         Ok(())
-        //     },
-        //     Some(VirtualNode::Directory(_)) => Err(io::Error::new(io::ErrorKind::Other, "Directory not empty")),
-        //     Some(VirtualNode::File(_)) => Err(io::Error::new(io::ErrorKind::Other, "Not a directory")),
-        //     None => Err(io::Error::new(io::ErrorKind::NotFound, "Directory not found")),
-        // }
     }
 }
 
