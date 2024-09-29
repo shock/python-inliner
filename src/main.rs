@@ -128,58 +128,69 @@ fn handle_editable_installs<FS: FileSystem>(fs: &mut FS, python_sys_path: &mut V
 
 fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, file: &Path, module_names: &str, processed: &mut HashSet<PathBuf>, opt: &Opt) -> Result<String, Box<dyn Error>> {
     let content = fs.read_to_string(file)?;
-    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+((?:{})\S*)\s+import\s+.+$", module_names))?;
-    // let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
+    let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+((?:{})\S*)\s+import\s+(.+)$", module_names))?;
     let parent_dir = file.parent().unwrap();
-    println!("parent_dir: {:?}", parent_dir);
     let mut result = String::new();
     let mut last_end = 0;
     let captures = import_regex.captures_iter(&content);
     for cap in captures {
-        println!("capture: {:?}", &cap[0]);
         let indent = &cap[1];
         let submodule = &cap[2];
+        let imports = &cap[3];
         let start = cap.get(0).unwrap().start();
         let mut end = cap.get(0).unwrap().end();
         result.push_str(&content[last_end..start]);
 
         let mut module_paths = Vec::new();
         if submodule.starts_with(".") {
-            let module_path = parent_dir.join(format!("{}.py",submodule.replace(".", "")));
+            let module_path = parent_dir.join(submodule.trim_start_matches('.').replace(".", "/"));
             module_paths.push(module_path);
         } else {
             for path in python_sys_path {
-                let module_path = path.join(format!("{}.py",submodule.replace(".", "/")));
+                let module_path = path.join(submodule.replace(".", "/"));
                 module_paths.push(module_path);
             }
         }
-        println!("module_paths: {:?}", module_paths);
+
         let mut found = false;
         for module_path in module_paths {
-            println!("Checking module_path: {:?}", module_path.to_path_buf());
-            if fs.exists(&module_path).unwrap() {
-                println!("found");
-                found = true;
-                if processed.insert(module_path.to_path_buf()) {
-                    let inlined_content = inline_imports(fs, python_sys_path, &module_path, module_names, processed, opt)?;
+            let init_path = module_path.join("__init__.py");
+            let module_file_path = module_path.with_extension("py");
 
-                    if !opt.release {
-                        result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}\n", submodule));
-                    }
+            if fs.exists(&init_path).unwrap() {
+                // It's a package, process __init__.py
+                found = true;
+                if processed.insert(init_path.to_path_buf()) {
+                    let init_content = inline_imports(fs, python_sys_path, &init_path, module_names, processed, opt)?;
+                    result.push_str(&format!("{indent}# ↓↓↓ inlined package: {}\n", submodule));
                     result.push_str(&indent);
-                    result.push_str(&inlined_content.replace("\n", &format!("\n{indent}")));
-                    // result.push_str("\n");
-                    if !opt.release {
-                        result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}", submodule));
-                    }
-                } else {
-                    println!("WARNING: already inlined {}.  Skipping...", module_path.display());
-                    if !opt.release {
-                        result.push_str(&format!("{indent}# →→ {} ←← already inlined", submodule));
-                    } else {
-                        end += 1;  // remove the newline from the end of the import statement
+                    result.push_str(&init_content.replace("\n", &format!("\n{indent}")));
+                    result.push_str(&format!("\n{indent}# ↑↑↑ inlined package: {}\n", submodule));
+                }
+                // Now process the specific imports
+                let specific_imports = imports.split(',').map(|s| s.trim()).collect::<Vec<_>>();
+                for import_item in specific_imports {
+                    let import_path = module_path.join(format!("{}.py", import_item));
+                    if fs.exists(&import_path).unwrap() {
+                        let import_content = inline_imports(fs, python_sys_path, &import_path, module_names, processed, opt)?;
+                        result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}.{}\n", submodule, import_item));
+                        result.push_str(&indent);
+                        result.push_str(&import_content.replace("\n", &format!("\n{indent}")));
+                        result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}.{}\n", submodule, import_item));
                     }
                 }
+            } else if fs.exists(&module_file_path).unwrap() {
+                // It's a module file
+                found = true;
+                if processed.insert(module_file_path.to_path_buf()) {
+                    let module_content = inline_imports(fs, python_sys_path, &module_file_path, module_names, processed, opt)?;
+                    result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}\n", submodule));
+                    result.push_str(&indent);
+                    result.push_str(&module_content.replace("\n", &format!("\n{indent}")));
+                    result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}\n", submodule));
+                }
+            }
+            if found {
                 break;
             }
         }
@@ -191,7 +202,6 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
     }
 
     result.push_str(&content[last_end..]);
-    // processed.remove(file);
     Ok(result)
 }
 
