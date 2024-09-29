@@ -79,6 +79,15 @@ impl FileSystem for RealFileSystem {
     }
 
     fn exists<P: AsRef<Path>>(&mut self, path: P) -> io::Result<bool> {
-        fs::metadata(path).map(|m| m.is_file() || m.is_dir())
+        match fs::metadata(path) {
+            Ok(m) => Ok(m.is_file() || m.is_dir()),
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    Ok(false)
+                } else {
+                    Err(e)
+                }
+            },
+        }
     }
 }

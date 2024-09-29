@@ -3,14 +3,14 @@
 
 import sys
 
-# ↓↓↓ inlined module: modules.class2
+# ↓↓↓ inlined module: .class2
 class Class2:
     import sys
 
     def __init__(self):
         self.name = "Class2"
 
-# ↑↑↑ inlined module: modules.class2
+# ↑↑↑ inlined module: .class2
 
 class Class1:
     def __init__(self):
@@ -26,7 +26,14 @@ class Taco:
     def __str__(self):
         return f"Taco: {self.name}"
 # ↑↑↑ inlined module: tacos.taco
-from aliens.alien import Alien
+# ↓↓↓ inlined module: aliens.alien
+class Alien:
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return f"Alien: {self.name}"
+# ↑↑↑ inlined module: aliens.alien
 
 def main():
     # ↓↓↓ inlined module: modules.submodules.class3

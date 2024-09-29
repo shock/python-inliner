@@ -34,17 +34,31 @@ struct Opt {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
-    if opt.environment {
-        println!("PYTHONPATH: {:?}", get_python_sys_paths()?);
-        return Ok(());
-    }
+    let python_sys_path = get_python_sys_path()?;
+    // map the python_sys_path to a vector of Path objects
+    let python_sys_path: Vec<PathBuf> = python_sys_path.into_iter().map(|p| PathBuf::from(p)).collect();
+
     // get current working directory
     let current_dir = fs::canonicalize(".")?;
     let mut fs = RealFileSystem::new(current_dir);
-    run(opt, &mut fs)
+
+    // filter out the non-directories from python_sys_path using the fs.is_dir() method
+    let python_sys_path = python_sys_path.into_iter().filter(|p|
+        match fs.is_dir(p) {
+            Ok(true) => true,
+            _ => false
+        }
+    ).collect::<Vec<PathBuf>>();
+
+    // if the environment flag is set, print the PYTHONPATH and exit
+    if opt.environment {
+        println!("PYTHONPATH: {:?}", python_sys_path);
+        return Ok(())
+    }
+    run(opt, &mut fs, &python_sys_path)
 }
 
-fn run<FS: FileSystem>(opt: Opt, fs: &mut FS) -> Result<(), Box<dyn Error>> {
+fn run<FS: FileSystem>(opt: Opt, fs: &mut FS, python_sys_path: &Vec<PathBuf>) -> Result<(), Box<dyn Error>> {
     // get the input_file as a fully qualified path
     let input_file = fs.canonicalize(&opt.input_file)?;
 
@@ -52,7 +66,9 @@ fn run<FS: FileSystem>(opt: Opt, fs: &mut FS) -> Result<(), Box<dyn Error>> {
     let working_dir = input_file.parent().unwrap();
 
     // split the module names into a vector
-    let module_names = opt.module_names.split(",").map(|s| s.trim().to_string()).collect::<Vec<String>>();
+    let mut module_names = opt.module_names.split(",").map(|s| s.trim().to_string()).collect::<Vec<String>>();
+    // insert a '.' at the beginning of the module names
+    module_names.insert(0, ".".to_string());
     // rejoin the module names into a single string using a pipe character
     let module_names = module_names.join("|");
     let mut content = inline_imports(fs, &working_dir, &opt.input_file, &module_names, &mut HashSet::new(), &opt)?;
@@ -68,7 +84,8 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path,
     let content = fs.read_to_string(file)?;
     let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+((?:{})\S*)\s+import\s+.+$", module_names))?;
     // let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+{}(\S*)\s+import\s+.+$", regex::escape(modules_name)))?;
-
+    let parent_dir = file.parent().unwrap();
+    println!("parent_dir: {:?}", parent_dir);
     let mut result = String::new();
     let mut last_end = 0;
     let captures = import_regex.captures_iter(&content);
@@ -80,10 +97,15 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path,
         let mut end = cap.get(0).unwrap().end();
         result.push_str(&content[last_end..start]);
 
-        let module_path = workding_dir.join(format!("{}.py",submodule.replace(".", "/")));
+        let module_path;
+        if submodule.starts_with(".") {
+            module_path = parent_dir.join(format!("{}.py",submodule.replace(".", "")));
+        } else {
+            module_path = workding_dir.join(format!("{}.py",submodule.replace(".", "/")));
+        }
         println!("working_dir: {:?}, module_path: {:?}", workding_dir, module_path.to_path_buf());
         if fs.exists(&module_path).unwrap() {
-            println!("processed before: {:?}", processed);
+            // println!("processed before: {:?}", processed);
             if processed.insert(module_path.to_path_buf()) {
                 let inlined_content = inline_imports(fs, workding_dir, &module_path, module_names, processed, opt)?;
 
@@ -104,7 +126,7 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, workding_dir: &Path, file: &Path,
                     end += 1;  // remove the newline from the end of the import statement
                 }
             }
-            println!("processed after: {:?}", processed);
+            // println!("processed after: {:?}", processed);
         } else {
             result.push_str(&content[start..end]);
         }
@@ -156,32 +178,60 @@ fn post_process_imports(content: &str) -> String {
 use std::process::{Command, Stdio};
 use std::str;
 
-fn get_python_sys_path() -> Result<(), Box<dyn std::error::Error>> {
+// Create a custom error type
+#[derive(Debug)]
+struct CommandError(String);
+
+impl std::fmt::Display for CommandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for CommandError {}
+
+fn get_python_sys_path() -> Result<Vec<String>, CommandError> {
     // Launch the Python subprocess
     let output = Command::new("python3") // or "python" depending on your setup
         .arg("-c") // Use the -c option to run the following command
-        .arg("import sys; print('\n'.join(sys.path))") // Command to get sys.path
+        .arg("import sys; print('\\n'.join(sys.path))") // Correctly escape the newline character
         .stdout(Stdio::piped()) // Capture standard output
-        .output()?; // Execute the command and capture the output
+        .stderr(Stdio::piped()) // Capture standard error
+        .output(); // Execute the command and capture the output
 
+    if let Err(e) = output {
+        return Err(CommandError(format!("Command failed with error: {}", e)));
+    }
     // Check if the command was successful
+    let output = output.unwrap();
     if !output.status.success() {
+        // Capture stdout and stderr
+        let stdout_str = str::from_utf8(&output.stdout).unwrap_or("<invalid utf-8>");
+        let stderr_str = str::from_utf8(&output.stderr).unwrap_or("<invalid utf-8>");
+
         eprintln!("Error: Command failed with status: {}", output.status);
-        return Ok(());
+        eprintln!("stdout: {}", stdout_str);
+        eprintln!("stderr: {}", stderr_str);
+
+        return Err(CommandError(format!(
+            "Command failed with status: {}",
+            output.status
+        )));
     }
 
     // Convert the output to a String
-    let output_str = str::from_utf8(&output.stdout)?;
+    let output_str = str::from_utf8(&output.stdout);
 
-    // Split the output into lines and collect into a Vec<String>
-    let sys_path: Vec<String> = output_str.lines().map(String::from).collect();
-
-    // Print the captured sys.path
-    for path in sys_path {
-        println!("{}", path);
+    match output_str {
+        Ok(output_str) => {
+            // Split the output into lines and collect into a Vec<String>
+            let sys_path: Vec<String> = output_str.lines().map(String::from).collect();
+            Ok(sys_path)
+        },
+        Err(e) => {
+            return Err(CommandError(format!("Error converting output to string: {}", e)));
+        }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -233,9 +283,12 @@ if __name__ == '__main__':
             release: false,
             environment: false,
         };
+        let mut python_sys_path = Vec::new();
+        python_sys_path.push(PathBuf::from("/test/modules"));
         run(
             opt,
             &mut mock_fs,
+            &python_sys_path,
         ).unwrap();
 
         let result = mock_fs.read_to_string("/test/main_inlined.py").unwrap();
