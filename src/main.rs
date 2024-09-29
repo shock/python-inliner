@@ -186,12 +186,12 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
                     result.push_str(&indent);
                     result.push_str(&module_content.replace("\n", &format!("\n{indent}")));
                     if !opt.release {
-                        result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}\n", submodule));
+                        result.push_str(&format!("\n{indent}# ↑↑↑ inlined submodule: {}", submodule));
                     }
                 } else {
                     println!("WARNING: module {} has already been inlined. Skipping...", module_file_path.display());
                     if !opt.release {
-                        result.push_str(&format!("{indent}# →→ {} ←← module already inlined\n", submodule));
+                        result.push_str(&format!("{indent}# →→ {} ←← module already inlined", submodule));
                     } else {
                         end += 1;  // remove the newline from the end of the import statement
                     }
@@ -328,14 +328,14 @@ if __name__ == '__main__':
 "#;
 
     const INLINED_CONTENT: &str = r#"#!/usr/bin/env python3
-# ↓↓↓ inlined module: modules.module1
+# ↓↓↓ inlined submodule: modules.module1
 def func1():
     print('Function 1')
 
-# ↑↑↑ inlined module: modules.module1
+# ↑↑↑ inlined submodule: modules.module1
 
 def main():
-    # →→ modules.module1 ←← already inlined
+    # →→ modules.module1 ←← module already inlined
     print('Hello')
 
 if __name__ == '__main__':

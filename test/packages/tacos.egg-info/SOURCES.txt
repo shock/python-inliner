@@ -1,5 +1,6 @@
 pyproject.toml
 ../tacos/__init__.py
+../tacos/hot_sauce.py
 ../tacos/taco.py
 ../tacos.egg-info/PKG-INFO
 ../tacos.egg-info/SOURCES.txt
