@@ -13,3 +13,4 @@ categories = ["command-line-utilities"]
 [dependencies]
 structopt = "0.3"
 regex = "1.5"
+pyo3 = "0.22.3"

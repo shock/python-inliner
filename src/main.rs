@@ -27,10 +27,17 @@ struct Opt {
 
     #[structopt(long, short = "r", help = "Suppress comments in the output, and consolidate imports", takes_value = false)]
     release: bool,
+
+    #[structopt(long, short = "e", help = "Show python environment", takes_value = false)]
+    environment: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
+    if opt.environment {
+        println!("PYTHONPATH: {:?}", get_python_sys_paths()?);
+        return Ok(());
+    }
     // get current working directory
     let current_dir = fs::canonicalize(".")?;
     let mut fs = RealFileSystem::new(current_dir);
@@ -146,19 +153,36 @@ fn post_process_imports(content: &str) -> String {
     result
 }
 
-// use pyo3::prelude::*;
-// use pyo3::types::PyList;
+use std::process::{Command, Stdio};
+use std::str;
 
-// fn get_sys_path() -> PyResult<Vec<String>> {
-//     Python::with_gil(|py| {
-//         let sys = py.import("sys")?;
-//         let sys_path: &PyList = sys.get("path")?.downcast()?;
-//         let paths: Vec<String> = sys_path.iter()
-//             .map(|p| p.to_string())
-//             .collect();
-//         Ok(paths)
-//     })
-// }
+fn get_python_sys_path() -> Result<(), Box<dyn std::error::Error>> {
+    // Launch the Python subprocess
+    let output = Command::new("python3") // or "python" depending on your setup
+        .arg("-c") // Use the -c option to run the following command
+        .arg("import sys; print('\n'.join(sys.path))") // Command to get sys.path
+        .stdout(Stdio::piped()) // Capture standard output
+        .output()?; // Execute the command and capture the output
+
+    // Check if the command was successful
+    if !output.status.success() {
+        eprintln!("Error: Command failed with status: {}", output.status);
+        return Ok(());
+    }
+
+    // Convert the output to a String
+    let output_str = str::from_utf8(&output.stdout)?;
+
+    // Split the output into lines and collect into a Vec<String>
+    let sys_path: Vec<String> = output_str.lines().map(String::from).collect();
+
+    // Print the captured sys.path
+    for path in sys_path {
+        println!("{}", path);
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
@@ -207,6 +231,7 @@ if __name__ == '__main__':
             output_file: PathBuf::from("/test/main_inlined.py"),
             module_names: "".to_string(),
             release: false,
+            environment: false,
         };
         run(
             opt,
