@@ -10,9 +10,9 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "tacos", editable = "test/tacos" }]
+requires-dist = [{ name = "tacos", editable = "test/packages/tacos" }]
 
 [[package]]
 name = "tacos"
 version = "0.1.0"
-source = { editable = "test/tacos" }
+source = { editable = "test/packages/tacos" }

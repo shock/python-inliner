@@ -70,5 +70,6 @@ def main():
     print(alien)
 
 if __name__ == "__main__":
+    # →→ modules.submodules.class3 ←← module already inlined
 
     main()

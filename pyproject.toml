@@ -9,4 +9,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-tacos = { path = "test/tacos", editable = true }
+tacos = { path = "test/packages/tacos", editable = true }
