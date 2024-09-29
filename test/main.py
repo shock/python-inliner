@@ -1,6 +1,7 @@
 # !/usr/bin/env python
 from modules.class1 import Class1
 from tacos import Taco
+from tacos.hot_sauce import HotSauce
 from aliens.alien import Alien
 
 def main():
@@ -14,6 +15,8 @@ def main():
     print(taco)
     alien = Alien("Alien")
     print(alien)
+    hot_sauce = HotSauce("HotSauce")
+    print(hot_sauce)
 
 if __name__ == "__main__":
     from modules.submodules.class3 import Class3

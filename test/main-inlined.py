@@ -34,6 +34,15 @@ class Taco:
 __all__ = ["Taco"]
 # ↑↑↑ inlined package: tacos
 
+# ↓↓↓ inlined module: tacos.hot_sauce
+class HotSauce:
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return f"HotSauce: {self.name}"
+# ↑↑↑ inlined module: tacos.hot_sauce
+
 # ↓↓↓ inlined module: aliens.alien
 class Alien:
     def __init__(self, name):
@@ -60,6 +69,8 @@ def main():
     print(taco)
     alien = Alien("Alien")
     print(alien)
+    hot_sauce = HotSauce("HotSauce")
+    print(hot_sauce)
 
 if __name__ == "__main__":
     # →→ modules.submodules.class3 ←← module already inlined
