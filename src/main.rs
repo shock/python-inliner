@@ -132,7 +132,8 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
     for cap in captures {
         let indent = &cap[1];
         let submodule = &cap[2];
-        let imports = &cap[3];
+        #[allow(unused)]
+        let imports = &cap[3];  // TODO: handle specific imports?  non-trivial
         let start = cap.get(0).unwrap().start();
         let mut end = cap.get(0).unwrap().end();
         result.push_str(&content[last_end..start]);
@@ -174,41 +175,13 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
                         end += 1;  // remove the newline from the end of the import statement
                     }
                 }
-                // // Now process the specific imports
-                // let specific_imports = imports.split(',').map(|s| s.trim()).collect::<Vec<_>>();
-                // // let specific_imports = specific_imports.into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>();
-                // println!("specific_imports: {:?}", specific_imports);
-                // for import_item in specific_imports {
-                //     let import_path = module_path.join(format!("{}.py", import_item));
-                //     if fs.exists(&import_path).unwrap() {
-                //         println!("import_path found: {:?}", import_path);
-                //         if processed.insert(import_path.to_path_buf()) {
-                //             let import_content = inline_imports(fs, python_sys_path, &import_path, module_names, processed, opt)?;
-                //             if !opt.release {
-                //                 result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}.{}\n", submodule, import_item));
-                //             }
-                //             result.push_str(&indent);
-                //             result.push_str(&import_content.replace("\n", &format!("\n{indent}")));
-                //             if !opt.release {
-                //                 result.push_str(&format!("\n{indent}# ↑↑↑ inlined module: {}.{}\n", submodule, import_item));
-                //             }
-                //         } else {
-                //             println!("WARNING: module {}.{} has already been inlined. Skipping...", submodule, import_item);
-                //             if !opt.release {
-                //                 result.push_str(&format!("{indent}# →→ {}.{} ←← module already inlined\n", submodule, import_item));
-                //             } else {
-                //                 end += 1;  // remove the newline from the end of the import statement
-                //             }
-                //         }
-                //     }
-                // }
             } else if fs.exists(&module_file_path).unwrap() {
                 // It's a module file
                 found = true;
                 if processed.insert(module_file_path.to_path_buf()) {
                     let module_content = inline_imports(fs, python_sys_path, &module_file_path, module_names, processed, opt)?;
                     if !opt.release {
-                        result.push_str(&format!("{indent}# ↓↓↓ inlined module: {}\n", submodule));
+                        result.push_str(&format!("{indent}# ↓↓↓ inlined submodule: {}\n", submodule));
                     }
                     result.push_str(&indent);
                     result.push_str(&module_content.replace("\n", &format!("\n{indent}")));
