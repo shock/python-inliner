@@ -43,12 +43,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut fs = RealFileSystem::new(current_dir);
 
     // filter out the non-directories from python_sys_path using the fs.is_dir() method
-    let python_sys_path = python_sys_path.into_iter().filter(|p|
+    let mut python_sys_path = python_sys_path.into_iter().filter(|p|
         match fs.is_dir(p) {
             Ok(true) => true,
             _ => false
         }
     ).collect::<Vec<PathBuf>>();
+    handle_editable_installs(&mut fs, &mut python_sys_path)?;
 
     // if the environment flag is set, print the PYTHONPATH and exit
     if opt.environment {
@@ -68,7 +69,7 @@ fn run<FS: FileSystem>(opt: Opt, fs: &mut FS, python_sys_path: &Vec<PathBuf>) ->
     python_sys_path.insert(0, working_dir.to_path_buf());
 
     // split the module names into a vector
-    let mut module_names = opt.module_names.split(",").map(|s| s.trim().to_string()).collect::<Vec<String>>();
+    let mut module_names: Vec<String> = opt.module_names.split(",").map(|s| s.trim().to_string()).collect::<Vec<String>>();
     // insert a '.' at the beginning of the module names to match the current script's directory
     module_names.insert(0, ".".to_string());
 
@@ -81,6 +82,47 @@ fn run<FS: FileSystem>(opt: Opt, fs: &mut FS, python_sys_path: &Vec<PathBuf>) ->
     }
     fs.write(&opt.output_file, content)?;
     println!("Inlined content written to {:?}", opt.output_file);
+    Ok(())
+}
+
+use serde_json::Value;
+
+fn handle_editable_installs<FS: FileSystem>(fs: &mut FS, python_sys_path: &mut Vec<PathBuf>) -> Result<(), Box<dyn Error>> {
+    let site_packages_paths: Vec<PathBuf> = python_sys_path
+        .iter()
+        .filter(|path| path.to_string_lossy().contains("site-packages"))
+        .cloned()
+        .collect();
+
+    for path in site_packages_paths {
+        println!("path: {:?}", path);
+        if fs.is_dir(&path)? {
+            println!("is_dir");
+            for entry in fs.read_dir(&path)? {
+                let entry_path = entry;
+                if entry_path.is_dir() && entry_path.file_name().unwrap().to_string_lossy().ends_with(".dist-info") {
+                    let direct_url_path = entry_path.join("direct_url.json");
+                    if fs.exists(&direct_url_path)? {
+                        let content = fs.read_to_string(&direct_url_path)?;
+                        let json: Value = serde_json::from_str(&content)?;
+
+                        if let Some(url) = json.get("url").and_then(Value::as_str) {
+                            if let Some(dir_info) = json.get("dir_info") {
+                                if let Some(true) = dir_info.get("editable").and_then(Value::as_bool) {
+                                    if url.starts_with("file://") {
+                                        let package_path = PathBuf::from(url.trim_start_matches("file://"));
+                                        if fs.is_dir(&package_path)? && !python_sys_path.contains(&package_path) {
+                                            python_sys_path.push(package_path);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -141,8 +183,8 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
                 break;
             }
         }
-
         if !found {
+            println!("Could not find submodule {:?}", submodule);
             result.push_str(&content[start..end]);
         }
         last_end = end;

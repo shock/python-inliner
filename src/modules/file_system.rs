@@ -14,6 +14,9 @@ pub trait FileSystem {
     fn read_to_string<P: AsRef<Path>>(&mut self, path: P) -> io::Result<String>;
 
     #[allow(unused)]
+    fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> io::Result<Vec<PathBuf>>;
+
+    #[allow(unused)]
     fn mkdir_p<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()>;
 
     #[allow(unused)]
@@ -58,6 +61,17 @@ impl FileSystem for RealFileSystem {
         fs::read_to_string(path)
     }
 
+    fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> io::Result<Vec<PathBuf>> {
+        // map the read_dir result to a vector of PathBuf
+        let read_dir = fs::read_dir(path)?;
+        let mut paths = Vec::new();
+        for entry in read_dir {
+            let entry = entry?;
+            paths.push(entry.path());
+        }
+        Ok(paths)
+    }
+
     fn mkdir_p<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
         fs::create_dir_all(path)
     }
@@ -71,11 +85,29 @@ impl FileSystem for RealFileSystem {
     }
 
     fn is_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<bool> {
-        fs::metadata(path).map(|m| m.is_file())
+        match fs::metadata(path) {
+            Ok(m) => Ok(m.is_file()),
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    Ok(false)
+                } else {
+                    Err(e)
+                }
+            },
+        }
     }
 
     fn is_dir<P: AsRef<Path>>(&mut self, path: P) -> io::Result<bool> {
-        fs::metadata(path).map(|m| m.is_dir())
+        match fs::metadata(path) {
+            Ok(m) => Ok(m.is_dir()),
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    Ok(false)
+                } else {
+                    Err(e)
+                }
+            },
+        }
     }
 
     fn exists<P: AsRef<Path>>(&mut self, path: P) -> io::Result<bool> {

@@ -131,6 +131,24 @@ impl FileSystem for VirtualFileSystem {
         }
     }
 
+    fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> io::Result<Vec<PathBuf>> {
+        let components = self.resolve_path(path)?;
+        match self.get_node(&components)? {
+            VirtualNode::File(_) => Err(io::Error::new(io::ErrorKind::Other, "Is a file")),
+            VirtualNode::Directory(dir) => {
+                // return directory contents as a vector of PathBuf
+                let mut paths = Vec::new();
+                for (name, node) in dir.contents.iter() {
+                    match node {
+                        VirtualNode::File(_) => paths.push(PathBuf::from(name)),
+                        VirtualNode::Directory(_) => paths.push(PathBuf::from(name)),
+                    }
+                }
+                Ok(paths)
+            },
+        }
+    }
+
     fn mkdir_p<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
         let components = self.resolve_path(path)?;
         let mut current_node = &mut self.root;
