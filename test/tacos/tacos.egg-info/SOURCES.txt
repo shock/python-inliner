@@ -1,0 +1,5 @@
+pyproject.toml
+tacos.egg-info/PKG-INFO
+tacos.egg-info/SOURCES.txt
+tacos.egg-info/dependency_links.txt
+tacos.egg-info/top_level.txt

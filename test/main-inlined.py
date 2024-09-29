@@ -18,14 +18,7 @@ class Class1:
         self.class2 = Class2()
 
 # ↑↑↑ inlined module: modules.class1
-# ↓↓↓ inlined module: tacos.taco
-class Taco:
-    def __init__(self, name):
-        self.name = name
-
-    def __str__(self):
-        return f"Taco: {self.name}"
-# ↑↑↑ inlined module: tacos.taco
+from tacos import Taco
 # ↓↓↓ inlined module: aliens.alien
 class Alien:
     def __init__(self, name):
@@ -34,6 +27,7 @@ class Alien:
     def __str__(self):
         return f"Alien: {self.name}"
 # ↑↑↑ inlined module: aliens.alien
+from requests import get
 
 def main():
     # ↓↓↓ inlined module: modules.submodules.class3

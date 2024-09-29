@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+# !/usr/bin/env python
 from modules.class1 import Class1
-from tacos.taco import Taco
+from tacos import Taco
 from aliens.alien import Alien
 
 def main():

@@ -5,3 +5,14 @@ requires-python = ">=3.12"
 name = "python-inliner"
 version = "0.1.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "tacos" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tacos", editable = "test/tacos" }]
+
+[[package]]
+name = "tacos"
+version = "0.1.0"
+source = { editable = "test/tacos" }
