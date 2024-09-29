@@ -33,14 +33,6 @@ class Taco:
 
 __all__ = ["Taco"]
 # ↑↑↑ inlined package: tacos
-# ↓↓↓ inlined module: tacos.Taco
-class Taco:
-    def __init__(self, name):
-        self.name = name
-
-    def __str__(self):
-        return f"Taco: {self.name}"
-# ↑↑↑ inlined module: tacos.Taco
 
 # ↓↓↓ inlined module: aliens.alien
 class Alien:
