@@ -1,6 +1,6 @@
 [package]
 name = "python-inliner"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Bill Doughty <bill@doughty.com>"]
 description = "A CLI tool for inlining Python files from a sub-directory into a given Python script as a single file."
