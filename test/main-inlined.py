@@ -39,14 +39,7 @@ class HotSauce:
     def __str__(self):
         return f"HotSauce: {self.name}"
 # ↑↑↑ inlined submodule: tacos.hot_sauce
-# ↓↓↓ inlined submodule: aliens.alien
-class Alien:
-    def __init__(self, name):
-        self.name = name
-
-    def __str__(self):
-        return f"Alien: {self.name}"
-# ↑↑↑ inlined submodule: aliens.alien
+from aliens.alien import Alien
 
 def main():
     # ↓↓↓ inlined submodule: modules.submodules.class3
