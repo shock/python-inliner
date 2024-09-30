@@ -1,0 +1,12 @@
+[project]
+name = "python-inliner"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "tacos",
+]
+
+[tool.uv.sources]
+tacos = { path = "test/packages/tacos", editable = true }

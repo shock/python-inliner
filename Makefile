@@ -30,7 +30,9 @@ clean:
 		$(CARGO) clean
 
 test: debug
-	$(DEBUG_DIR)/$(EXECUTABLE) test/main.py test/main-inlined.py
+	rm -f test/main-inlined.py
+	$(CARGO) run test/main.py test/main-inlined.py tacos,modules
+	$(CARGO) test
 
 install: release
 		cp $(RELEASE_DIR)/$(EXECUTABLE) $(TARGET)

@@ -44,7 +44,7 @@
    - Comprehensive documentation should be provided, including installation instructions, usage examples, and API references.
 
 4. **Testing:**
-   - Unit tests must be implemented to validate the functionality of inlining, error handling, and performance.
+   - Unit tests must be implemented to validate the functionality of inlining, error handling, and performance.  Unit test will be written in Rust IN the file that contains the functions that are being tested.
 
 ### Deliverables:
 
