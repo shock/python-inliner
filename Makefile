@@ -9,7 +9,7 @@ CARGO = cargo
 BUILD_DIR = target
 DEBUG_DIR = $(BUILD_DIR)/debug
 RELEASE_DIR = $(BUILD_DIR)/release
-TARGET ?= $(HOME)/bin
+TARGET ?= /opt/local//bin
 
 # Executable name
 EXECUTABLE = python-inliner
