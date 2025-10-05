@@ -15,6 +15,14 @@ Works with monorepos, cross-repository imports, and third-party source-only pack
 - **🎯 Flexible Targeting**: Specify specific modules to inline or default to current directory
 - **🛡️ Safe by Design**: Third-party imports are never inlined unless explicitly specified, preventing bloated output
 
+## Safety Features
+
+**🔒 Third-party Import Protection**: External libraries are never inlined unless explicitly specified, preventing accidental inclusion of large dependencies and maintaining clean output.
+
+**🛡️ Circular Import Prevention**: Built-in tracking prevents infinite recursion and handles complex import chains gracefully.
+
+**🎯 Explicit Control**: Only processes modules you explicitly list, giving you complete control over what gets inlined.
+
 ## Installation
 
 ### From Source
@@ -29,6 +37,18 @@ make install
 
 ```bash
 cargo install python-inliner
+```
+
+## Quick Start
+
+```bash
+# Clone and build
+git clone https://github.com/shock/python-inliner.git
+cd python-inliner
+make install
+
+# Try the example
+python-inliner test/main.py test/output.py modules,tacos
 ```
 
 ## Usage
@@ -69,13 +89,62 @@ Shows detailed information about import resolution and processing.
 
 *Example code can be found in the `test/` directory of this project.*
 
-### Sample Input
+### Example: Before and After
 
+**Input File** (`main.py`):
 ```python
-# main.py
+#!/usr/bin/env python
 from modules.class1 import Class1
 from tacos import Taco
 from tacos.hot_sauce import HotSauce
+
+def main():
+    c1 = Class1()
+    taco = Taco("Taco")
+    print(taco)
+
+if __name__ == "__main__":
+    main()
+```
+
+**Output File** (`main-inlined.py`):
+```python
+#!/usr/bin/env python
+# ↓↓↓ inlined submodule: modules.class1
+
+# ↓↓↓ inlined submodule: .class2
+class Class2:
+    def __init__(self):
+        self.name = "Class2"
+# ↑↑↑ inlined submodule: .class2
+
+class Class1:
+    def __init__(self):
+        self.name = "Class1"
+        self.class2 = Class2()
+# ↑↑↑ inlined submodule: modules.class1
+
+# ↓↓↓ inlined package: tacos
+# ↓↓↓ inlined submodule: .taco
+class Taco:
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return f"Taco: {self.name}"
+# ↑↑↑ inlined submodule: .taco
+
+__all__ = ["Taco"]
+# ↑↑↑ inlined package: tacos
+
+# ↓↓↓ inlined submodule: tacos.hot_sauce
+class HotSauce:
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return f"HotSauce: {self.name}"
+# ↑↑↑ inlined submodule: tacos.hot_sauce
 
 def main():
     c1 = Class1()
@@ -183,6 +252,22 @@ Generate consolidated files that are harder to reverse-engineer (when combined w
 
 Test import resolution and module dependencies in complex Python projects.
 
+## Troubleshooting
+
+### Module Not Found
+- Ensure the module is in Python's `sys.path` or current directory
+- Check virtual environment activation
+- Verify module names are spelled correctly
+
+### Circular Imports
+The tool automatically detects and handles circular imports by skipping re-inlining and adding comments.
+
+### Third-party Libraries
+Third-party imports are never inlined by default to prevent bloated output. Only explicitly listed modules are processed.
+
+### Performance Issues
+For very large projects, consider inlining specific modules rather than all modules to reduce processing time.
+
 ## Command Line Reference
 
 ```bash
@@ -224,6 +309,13 @@ Built in Rust for performance and reliability:
 - **Python Integration**: Subprocess execution for `sys.path` resolution
 - **Regex-based Parsing**: Efficient import statement detection
 - **Recursive Processing**: Handles nested imports and packages
+
+## Performance
+
+Built in Rust for exceptional performance:
+- **Fast Import Resolution**: Regex-based parsing for efficient import detection
+- **Minimal Memory Footprint**: Efficient recursive processing
+- **Quick Execution**: Processes complex import chains in milliseconds
 
 ## License
 
