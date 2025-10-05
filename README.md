@@ -1,6 +1,8 @@
 # Python Inliner
 
-A high-performance Rust CLI tool that recursively inlines Python modules and packages into a single consolidated file, supporting Python's `sys.path`, editable installs, and advanced import resolution.
+A high-performance Rust CLI tool that enables modular Python development while supporting single-file distribution. **Primary use case**: Develop using modular repository structures for efficient unit testing and maintenance, then inline modules into a single file for deployment—avoiding the headaches of monolithic file development.
+
+Works with monorepos, cross-repository imports, and third-party source-only packages (no binaries) as long as they're in the Python environment. Recursively inlines Python modules and packages into consolidated files, supporting Python's `sys.path`, editable installs, and advanced import resolution.
 
 ## Features
 
@@ -64,6 +66,8 @@ python-inliner -v input.py output.py
 Shows detailed information about import resolution and processing.
 
 ## Examples
+
+*Example code can be found in the `test/` directory of this project.*
 
 ### Sample Input
 
