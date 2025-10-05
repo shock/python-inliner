@@ -11,6 +11,7 @@ A high-performance Rust CLI tool that recursively inlines Python modules and pac
 - **🔧 Editable Install Support**: Detects and processes pip editable installations
 - **📝 Debug Mode**: Verbose output for debugging complex import chains
 - **🎯 Flexible Targeting**: Specify specific modules to inline or default to current directory
+- **🛡️ Safe by Design**: Third-party imports are never inlined unless explicitly specified, preventing bloated output
 
 ## Installation
 
@@ -113,12 +114,13 @@ The tool recursively inlines imports from inlined modules. When a module is inli
 - `class1.py` imports `from .class2 import Class2`
 - Both `class1.py` and `class2.py` will be inlined into the output
 
-**Important**: The tool only inlines imports that match the specified module names. Third-party imports within inlined modules are **not** recursively inlined unless explicitly listed.
+**Safety Feature**: The tool only inlines imports that match the specified module names. Third-party imports within inlined modules are **not** recursively inlined unless explicitly listed. This prevents accidentally inlining large external dependencies and ensures your inlined script remains maintainable.
 
 **Example**:
 - `main.py` imports `from modules.class1 import Class1`
 - `class1.py` imports `import json` (third-party)
 - Only `class1.py` is inlined, `json` remains as an import
+- This is intentional - it prevents your inlined script from becoming bloated with external library code
 
 ### Circular Import Prevention
 
