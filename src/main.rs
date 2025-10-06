@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fs as fs;
 use std::path::{Path, PathBuf};
 use std::error::Error;
+use std::time::{SystemTime, UNIX_EPOCH};
 use regex::Regex;
 use structopt::StructOpt;
 mod modules {
@@ -17,13 +18,13 @@ use modules::file_system::FileSystem;
 use utils::python::get_python_sys_path;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "python-inliner", about = "Python File Inliner - https://github.com/shock/python-inliner")]
+#[structopt(name = "python-inliner", about = "Python File Inliner - https://github.com/shock/python-inliner", version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"))]
 struct Opt {
     #[structopt(parse(from_os_str))]
-    input_file: PathBuf,
+    input_file: Option<PathBuf>,
 
     #[structopt(parse(from_os_str))]
-    output_file: PathBuf,
+    output_file: Option<PathBuf>,
 
     #[structopt(help = "comma-separated list module names to be inlined", default_value = "")]
     module_names: String,
@@ -33,10 +34,33 @@ struct Opt {
 
     #[structopt(long, short = "v", help = "Print verbose debug information", takes_value = false)]
     verbose: bool,
+
+    #[structopt(long, help = "Print version information and exit", takes_value = false)]
+    version: bool,
+}
+
+fn get_current_year() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() / (60 * 60 * 24 * 365) + 1970)
+        .unwrap_or(2025)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
+
+    if opt.version {
+        let current_year = get_current_year();
+        println!("python-inliner v{}", env!("CARGO_PKG_VERSION"));
+        println!("Author: {}", env!("CARGO_PKG_AUTHORS"));
+        println!("Copyright (c) {}", current_year);
+        return Ok(());
+    }
+
+    // Check if required arguments are provided
+    let input_file = opt.input_file.ok_or("Input file is required")?;
+    let output_file = opt.output_file.ok_or("Output file is required")?;
+
     let python_sys_path = get_python_sys_path()?;
     // map the python_sys_path to a vector of Path objects
     let python_sys_path: Vec<PathBuf> = python_sys_path.into_iter().map(|p| PathBuf::from(p)).collect();
@@ -57,12 +81,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     if opt.verbose {
         println!("PYTHONPATH: {:?}\n", python_sys_path);
     }
-    run(opt, &mut fs, &python_sys_path)
+    run(input_file, output_file, opt.module_names, opt.release, opt.verbose, &mut fs, &python_sys_path)
 }
 
-fn run<FS: FileSystem>(opt: Opt, fs: &mut FS, python_sys_path: &Vec<PathBuf>) -> Result<(), Box<dyn Error>> {
+fn run<FS: FileSystem>(input_file: PathBuf, output_file: PathBuf, module_names: String, release: bool, verbose: bool, fs: &mut FS, python_sys_path: &Vec<PathBuf>) -> Result<(), Box<dyn Error>> {
     // get the input_file as a fully qualified path
-    let input_file = fs.canonicalize(&opt.input_file)?;
+    let input_file = fs.canonicalize(&input_file)?;
 
     // get the working directory from the input file path
     let working_dir = input_file.parent().unwrap();
@@ -70,19 +94,28 @@ fn run<FS: FileSystem>(opt: Opt, fs: &mut FS, python_sys_path: &Vec<PathBuf>) ->
     python_sys_path.insert(0, working_dir.to_path_buf());
 
     // split the module names into a vector and filter out empty strings
-    let mut module_names: Vec<String> = opt.module_names.split(",").filter(|s| !s.is_empty()).map(|s| s.trim().to_string()).collect::<Vec<String>>();
+    let mut module_names: Vec<String> = module_names.split(",").filter(|s| !s.is_empty()).map(|s| s.trim().to_string()).collect::<Vec<String>>();
     // insert a '.' at the beginning of the module names to match the current script's directory
     module_names.insert(0, "\\.".to_string());
 
     // rejoin the module names into a single string using a pipe character for the regex group
     let module_names = module_names.join("|");
 
-    let mut content = inline_imports(fs, &python_sys_path, &opt.input_file, &module_names, &mut HashSet::new(), &opt)?;
-    if opt.release {
+    let opt = Opt {
+        input_file: Some(input_file.clone()),
+        output_file: Some(output_file.clone()),
+        module_names: module_names.clone(),
+        release,
+        verbose,
+        version: false,
+    };
+
+    let mut content = inline_imports(fs, &python_sys_path, &input_file, &module_names, &mut HashSet::new(), &opt)?;
+    if release {
         content = post_process_imports(&content);
     }
-    fs.write(&opt.output_file, content)?;
-    println!("Inlined content written to {:?}", opt.output_file);
+    fs.write(&output_file, content)?;
+    println!("Inlined content written to {:?}", output_file);
     Ok(())
 }
 
@@ -315,17 +348,20 @@ if __name__ == '__main__':
         mock_fs.write("/test/main.py", MAIN_PY_CONTENT).unwrap();
         mock_fs.write("/test/modules/module1.py", MODULE1_PY_CONTENT).unwrap();
 
-        let opt = Opt {
-            input_file: PathBuf::from("/test/main.py"),
-            output_file: PathBuf::from("/test/main_inlined.py"),
-            module_names: "modules".to_string(),
-            release: false,
-            verbose: false,
-        };
+        let input_file = PathBuf::from("/test/main.py");
+        let output_file = PathBuf::from("/test/main_inlined.py");
+        let module_names = "modules".to_string();
+        let release = false;
+        let verbose = false;
+
         let mut python_sys_path = Vec::new();
         python_sys_path.push(PathBuf::from("/test/modules"));
         run(
-            opt,
+            input_file,
+            output_file,
+            module_names,
+            release,
+            verbose,
             &mut mock_fs,
             &python_sys_path,
         ).unwrap();
