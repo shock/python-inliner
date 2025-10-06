@@ -1,0 +1,6 @@
+class Alien:
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return f"Alien: {self.name}"

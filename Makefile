@@ -1,0 +1,41 @@
+
+# Makefile for building the python-inliner executable
+
+
+# Rust toolchain
+CARGO = cargo
+
+# Targets
+BUILD_DIR = target
+DEBUG_DIR = $(BUILD_DIR)/debug
+RELEASE_DIR = $(BUILD_DIR)/release
+TARGET ?= /opt/local//bin
+
+# Executable name
+EXECUTABLE = python-inliner
+
+# Default target
+all: debug
+
+# Build the project in debug mode
+debug:
+		$(CARGO) build
+
+# Build the project in release mode
+release: test
+		$(CARGO) build --release
+
+# Clean up build artifacts
+clean:
+		$(CARGO) clean
+
+test: debug
+	rm -f test/main-inlined.py
+	$(CARGO) run test/main.py test/main-inlined.py tacos,modules
+	$(CARGO) test
+
+install: release
+		cp $(RELEASE_DIR)/$(EXECUTABLE) $(TARGET)
+
+# Phony targets
+.PHONY: all debug release clean test
