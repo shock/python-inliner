@@ -11,34 +11,19 @@ class Class2:
         self.name = "Class2"
 
 # ↑↑↑ inlined submodule: .class2
+# This should NOT be inlined since 'json' is not in the module list
+import json
 
 class Class1:
     def __init__(self):
         self.name = "Class1"
         self.class2 = Class2()
+        # Use json to test if it gets inlined
+        self.data = json.dumps({"name": "Class1"})
 
 # ↑↑↑ inlined submodule: modules.class1
-# ↓↓↓ inlined package: tacos
-# ↓↓↓ inlined submodule: .taco
-class Taco:
-    def __init__(self, name):
-        self.name = name
-
-    def __str__(self):
-        return f"Taco: {self.name}"
-# ↑↑↑ inlined submodule: .taco
-
-__all__ = ["Taco"]
-# ↑↑↑ inlined package: tacos
-
-# ↓↓↓ inlined submodule: tacos.hot_sauce
-class HotSauce:
-    def __init__(self, name):
-        self.name = name
-
-    def __str__(self):
-        return f"HotSauce: {self.name}"
-# ↑↑↑ inlined submodule: tacos.hot_sauce
+from tacos import Taco
+from tacos.hot_sauce import HotSauce
 from aliens.alien import Alien
 
 def main():
