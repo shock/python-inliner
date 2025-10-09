@@ -25,26 +25,12 @@ Works with monorepos, cross-repository imports, and third-party source-only pack
 
 ## Installation
 
-### From Source
-
-```bash
-git clone https://github.com/shock/python-inliner.git
-cd python-inliner
-make install
-```
-
-### Cargo Install
-
-```bash
-cargo install python-inliner
-```
-
-## Quick Start
-
 ```bash
 # Clone and build
 git clone https://github.com/shock/python-inliner.git
 cd python-inliner
+# Create /opt/local/bin and add to PATH, if needed
+curl -sSL https://raw.githubusercontent.com/shock/string_space/refs/heads/master/setup_opt_local_bin.sh | /bin/bash
 make install
 
 # Try the example
