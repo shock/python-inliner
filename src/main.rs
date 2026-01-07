@@ -784,4 +784,83 @@ if __name__ == '__main__':
 
         assert_eq!(result, expected, "\n\nExpected:\n{}\n\nGot:\n{}\n", expected, result);
     }
+
+    #[test]
+    fn test___all___statement_removal() {
+        // This test reproduces the bug where __all__ statements from modules/packages
+        // are inlined into functions, causing invalid Python syntax
+        let mut mock_fs = VirtualFileSystem::new();
+        mock_fs.mkdir_p("/test/mylib").unwrap();
+
+        // Package __init__.py with __all__ statement
+        let init_py = r#"""My library package."""
+
+from .utils import helper_function
+
+__all__ = ["helper_function"]
+"#;
+        mock_fs.write("/test/mylib/__init__.py", init_py).unwrap();
+
+        // Utils module
+        let utils_py = r#"def helper_function():
+    """Helper function."""
+    return "Hello, world!"
+"#;
+        mock_fs.write("/test/mylib/utils.py", utils_py).unwrap();
+
+        // Main file with function-scoped import
+        let main_py = r#"def process_data():
+    """Process data using mylib."""
+    from mylib import helper_function
+
+    result = helper_function()
+    return result.upper()
+
+if __name__ == '__main__':
+    print(process_data())
+"#;
+        mock_fs.write("/test/main.py", main_py).unwrap();
+
+        let input_file = PathBuf::from("/test/main.py");
+        let output_file = PathBuf::from("/test/main_inlined.py");
+        let module_names = "mylib".to_string();
+        let release = false;
+        let verbose = false;
+
+        let mut python_sys_path = Vec::new();
+        python_sys_path.push(PathBuf::from("/test"));
+
+        run(
+            input_file,
+            output_file,
+            module_names,
+            release,
+            verbose,
+            &mut mock_fs,
+            &python_sys_path,
+        ).unwrap();
+
+        let result = mock_fs.read_to_string("/test/main_inlined.py").unwrap();
+
+        // The expected output should NOT include the __all__ statement
+        // from mylib/__init__.py, as it's only meaningful at module level
+        let expected = r#"def process_data():
+    """Process data using mylib."""
+    # ↓↓↓ inlined package: mylib
+    """My library package."""
+
+    def helper_function():
+        """Helper function."""
+        return "Hello, world!"
+    # ↑↑↑ inlined package: mylib
+
+    result = helper_function()
+    return result.upper()
+
+if __name__ == '__main__':
+    print(process_data())
+"#;
+
+        assert_eq!(result, expected, "\n\nExpected:\n{}\n\nGot:\n{}\n", expected, result);
+    }
 }

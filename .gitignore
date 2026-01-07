@@ -3,3 +3,4 @@
 .aider*
 target/
 __pycache__/
+http_request_error.log
