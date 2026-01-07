@@ -160,16 +160,106 @@ fn handle_editable_installs<FS: FileSystem>(fs: &mut FS, python_sys_path: &mut V
     Ok(())
 }
 
+/// Find all TYPE_CHECKING block ranges in the content
+/// Returns a vector of (start_pos, end_pos) tuples for each TYPE_CHECKING block
+fn find_type_checking_blocks(content: &str) -> Vec<(usize, usize)> {
+    let mut blocks = Vec::new();
+    let type_checking_regex = Regex::new(r"(?m)^([ \t]*)if\s+TYPE_CHECKING\s*:").unwrap();
+
+    for cap in type_checking_regex.captures_iter(content) {
+        let block_start = cap.get(0).unwrap().start();
+        let indent = &cap[1];
+        let indent_len = indent.len();
+
+        // Find the end of this indented block
+        // The block ends when we find a line with equal or lesser indentation (non-empty)
+        let after_colon = cap.get(0).unwrap().end();
+        let lines_after = &content[after_colon..];
+
+        let mut block_end = after_colon;
+        let mut found_content = false;
+
+        for line in lines_after.lines() {
+            let line_start = block_end;
+            let line_len = line.len();
+
+            // Skip empty lines (they're part of the block)
+            if line.trim().is_empty() {
+                block_end = line_start + line_len + 1; // +1 for newline
+                continue;
+            }
+
+            // Check indentation of non-empty line
+            let line_indent = line.len() - line.trim_start().len();
+
+            if !found_content {
+                // First non-empty line after if TYPE_CHECKING:
+                if line_indent > indent_len {
+                    found_content = true;
+                    block_end = line_start + line_len + 1;
+                } else {
+                    // No indented content found, block is empty
+                    break;
+                }
+            } else {
+                // Subsequent lines
+                if line_indent > indent_len {
+                    // Still inside the block
+                    block_end = line_start + line_len + 1;
+                } else {
+                    // End of block (dedent)
+                    break;
+                }
+            }
+        }
+
+        blocks.push((block_start, block_end));
+    }
+
+    blocks
+}
+
 fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, file: &Path, module_names: &str, processed: &mut HashSet<PathBuf>, opt: &Opt) -> Result<String, Box<dyn Error>> {
     let content = fs.read_to_string(file)?;
+
+    // Find all TYPE_CHECKING blocks and strip them from the content
+    // TYPE_CHECKING is always False at runtime, so these blocks are only for static type checkers
+    let type_checking_blocks = find_type_checking_blocks(&content);
+
     let import_regex = Regex::new(&format!(r"(?m)^([ \t]*)from\s+((?:{})\S*)\s+import\s+(.+)$", module_names))?;
     // if opt.verbose {
     //     println!("Import regex: {}", import_regex);
     // }
     let parent_dir = file.parent().unwrap();
     let mut result = String::new();
+
+    // First, skip over any TYPE_CHECKING blocks when copying content
+    let mut current_pos = 0;
+    for (block_start, block_end) in &type_checking_blocks {
+        // Copy content before this TYPE_CHECKING block
+        if current_pos < *block_start {
+            result.push_str(&content[current_pos..*block_start]);
+        }
+        // Skip the TYPE_CHECKING block entirely (don't copy it)
+        if opt.verbose {
+            let block_content = &content[*block_start..*block_end];
+            println!("Stripping TYPE_CHECKING block:\n{}", block_content.lines().take(3).collect::<Vec<_>>().join("\n"));
+        }
+        current_pos = *block_end;
+    }
+    // Copy any remaining content after the last TYPE_CHECKING block
+    let content_after_blocks = if current_pos < content.len() {
+        content[current_pos..].to_string()
+    } else {
+        String::new()
+    };
+
+    // Now process imports in the content (excluding TYPE_CHECKING blocks)
+    let content_to_process = result.clone() + &content_after_blocks;
+    result.clear();
     let mut last_end = 0;
-    let captures = import_regex.captures_iter(&content);
+
+    let captures = import_regex.captures_iter(&content_to_process);
     for cap in captures {
         // if opt.verbose {
         //     println!("Capture: {:?}", cap);
@@ -180,7 +270,7 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
         let imports = &cap[3];  // TODO: handle specific imports?  non-trivial
         let start = cap.get(0).unwrap().start();
         let mut end = cap.get(0).unwrap().end();
-        result.push_str(&content[last_end..start]);
+        result.push_str(&content_to_process[last_end..start]);
 
         let mut module_paths = Vec::new();
         if submodule.starts_with(".") {
@@ -261,12 +351,12 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
             if opt.verbose {
                 println!("Could not find module {:?}", submodule);
             }
-            result.push_str(&content[start..end]);
+            result.push_str(&content_to_process[start..end]);
         }
         last_end = end;
     }
 
-    result.push_str(&content[last_end..]);
+    result.push_str(&content_to_process[last_end..]);
     Ok(result)
 }
 

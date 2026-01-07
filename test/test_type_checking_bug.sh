@@ -29,30 +29,33 @@ echo ""
 # Validate the output
 echo "Validating inlined output..."
 
-# Check that TYPE_CHECKING import is present
-if ! grep -q "from typing import TYPE_CHECKING" test/test_multiline_type_checking_inlined.py; then
-    echo "✗ FAILED: TYPE_CHECKING import missing from output"
+# The correct behavior is to STRIP TYPE_CHECKING blocks entirely
+# TYPE_CHECKING is always False at runtime, so these blocks should not be in the inlined file
+
+# Check that TYPE_CHECKING blocks were removed (should NOT contain "if TYPE_CHECKING:")
+if grep -q "if TYPE_CHECKING:" test/test_multiline_type_checking_inlined.py; then
+    echo "✗ FAILED: Found TYPE_CHECKING block in output (should be stripped)"
     exit 1
 fi
 
-# Check that we don't have orphaned import names (the bug)
-# Look for lines with just variable names followed by commas with excessive indentation
+echo "✓ TYPE_CHECKING blocks stripped from output"
+
+# Check that we don't have orphaned import names (the bug from before the fix)
 if grep -q "^        [A-Z_]*_API_KEY,$" test/test_multiline_type_checking_inlined.py; then
-    echo "✗ FAILED: Found orphaned import names (indentation bug detected)"
-    echo "  This indicates the inliner incorrectly handled multi-line TYPE_CHECKING imports"
+    echo "✗ FAILED: Found orphaned import names with excessive indentation"
+    echo "  This indicates incomplete import replacement"
     exit 1
-fi
-
-# Check for orphaned closing parenthesis
-if grep -q "^    )$" test/test_multiline_type_checking_inlined.py; then
-    # Make sure it's not part of a valid import statement
-    if grep -B1 "^    )$" test/test_multiline_type_checking_inlined.py | grep -q "API_KEY,$"; then
-        echo "✗ FAILED: Found orphaned closing parenthesis from incomplete import replacement"
-        exit 1
-    fi
 fi
 
 echo "✓ No orphaned import statements detected"
+
+# Check that the module import statement from TYPE_CHECKING block was removed
+if grep -q "from modules.environment import" test/test_multiline_type_checking_inlined.py; then
+    echo "✗ FAILED: Found import from TYPE_CHECKING block in output (should be stripped)"
+    exit 1
+fi
+
+echo "✓ TYPE_CHECKING imports properly removed"
 echo ""
 
 # Try to run the inlined file
