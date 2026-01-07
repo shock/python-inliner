@@ -32,6 +32,7 @@ clean:
 test: debug
 	rm -f test/main-inlined.py
 	$(CARGO) run test/main.py test/main-inlined.py tacos,modules
+	./test/test_type_checking_bug.sh
 	$(CARGO) test
 
 install: release
