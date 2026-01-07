@@ -270,6 +270,42 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
         let imports = &cap[3];  // TODO: handle specific imports?  non-trivial
         let start = cap.get(0).unwrap().start();
         let mut end = cap.get(0).unwrap().end();
+
+        // Check if this is a multi-line import (ends with opening parenthesis)
+        let first_line = cap.get(0).unwrap().as_str();
+        if first_line.trim_end().ends_with("(") {
+            // Find the closing parenthesis
+            let remaining = &content_to_process[end..];
+            let mut paren_count = 1;  // We've seen the opening paren
+            let mut chars_scanned = 0;
+
+            for ch in remaining.chars() {
+                chars_scanned += ch.len_utf8();
+                if ch == '(' {
+                    paren_count += 1;
+                } else if ch == ')' {
+                    paren_count -= 1;
+                    if paren_count == 0 {
+                        // Found the matching closing paren
+                        end += chars_scanned;
+                        // Skip past any newline immediately after the closing paren
+                        if content_to_process[end..].starts_with('\n') {
+                            end += 1;
+                        } else if content_to_process[end..].starts_with("\r\n") {
+                            end += 2;
+                        }
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Single-line import: skip past the newline after the import statement
+            if content_to_process[end..].starts_with('\n') {
+                end += 1;
+            } else if content_to_process[end..].starts_with("\r\n") {
+                end += 2;
+            }
+        }
         result.push_str(&content_to_process[last_end..start]);
 
         let mut module_paths = Vec::new();
@@ -301,10 +337,19 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
                     if !opt.release {
                         result.push_str(&format!("{indent}# ↓↓↓ inlined package: {}\n", submodule));
                     }
-                    result.push_str(&indent);
-                    result.push_str(&init_content.replace("\n", &format!("\n{indent}")));
+                    // Add import context indentation to all lines of inlined content
+                    for line in init_content.lines() {
+                        if line.is_empty() {
+                            // Preserve empty lines without indentation
+                            result.push('\n');
+                        } else {
+                            result.push_str(indent);
+                            result.push_str(line);
+                            result.push('\n');
+                        }
+                    }
                     if !opt.release {
-                        result.push_str(&format!("\n{indent}# ↑↑↑ inlined package: {}\n", submodule));
+                        result.push_str(&format!("{indent}# ↑↑↑ inlined package: {}\n", submodule));
                     }
                 } else {
                     if opt.verbose {
@@ -312,8 +357,6 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
                     }
                     if !opt.release {
                         result.push_str(&format!("{indent}# →→ {} ←← package already inlined\n", submodule));
-                    } else {
-                        end += 1;  // remove the newline from the end of the import statement
                     }
                 }
             } else if fs.exists(&module_file_path).unwrap() {
@@ -327,19 +370,26 @@ fn inline_imports<FS: FileSystem>(fs: &mut FS, python_sys_path: &Vec<PathBuf>, f
                     if !opt.release {
                         result.push_str(&format!("{indent}# ↓↓↓ inlined submodule: {}\n", submodule));
                     }
-                    result.push_str(&indent);
-                    result.push_str(&module_content.replace("\n", &format!("\n{indent}")));
+                    // Add import context indentation to all lines of inlined content
+                    for line in module_content.lines() {
+                        if line.is_empty() {
+                            // Preserve empty lines without indentation
+                            result.push('\n');
+                        } else {
+                            result.push_str(indent);
+                            result.push_str(line);
+                            result.push('\n');
+                        }
+                    }
                     if !opt.release {
-                        result.push_str(&format!("\n{indent}# ↑↑↑ inlined submodule: {}", submodule));
+                        result.push_str(&format!("{indent}# ↑↑↑ inlined submodule: {}\n", submodule));
                     }
                 } else {
                     if opt.verbose {
                         println!("WARNING: module {} has already been inlined. Skipping...", module_file_path.display());
                     }
                     if !opt.release {
-                        result.push_str(&format!("{indent}# →→ {} ←← module already inlined", submodule));
-                    } else {
-                        end += 1;  // remove the newline from the end of the import statement
+                        result.push_str(&format!("{indent}# →→ {} ←← module already inlined\n", submodule));
                     }
                 }
             }
@@ -420,7 +470,6 @@ if __name__ == '__main__':
 # ↓↓↓ inlined submodule: modules.module1
 def func1():
     print('Function 1')
-
 # ↑↑↑ inlined submodule: modules.module1
 
 def main():
@@ -490,5 +539,249 @@ if __name__ == '__main__':
 "#;
 
         assert_eq!(post_process_imports(input), expected);
+    }
+
+    #[test]
+    fn test_module_level_indentation_preservation() {
+        // This test verifies that function-scoped imports correctly indent
+        // the inlined content to match the import statement's indentation level
+        let mut mock_fs = VirtualFileSystem::new();
+        mock_fs.mkdir_p("/test/mylib").unwrap();
+
+        // Module with module-level constants at indentation 0
+        let environment_py = r#"import os
+
+API_KEY = os.getenv("API_KEY") or "default-key"
+ANOTHER_CONSTANT = "value"
+
+def helper_function():
+    return API_KEY
+"#;
+        mock_fs.write("/test/mylib/environment.py", environment_py).unwrap();
+
+        // Main file that imports from an indented context (inside a function)
+        let main_py = r#"def my_function():
+    from mylib.environment import API_KEY
+    return API_KEY
+
+if __name__ == '__main__':
+    print(my_function())
+"#;
+        mock_fs.write("/test/main.py", main_py).unwrap();
+
+        let input_file = PathBuf::from("/test/main.py");
+        let output_file = PathBuf::from("/test/main_inlined.py");
+        let module_names = "mylib".to_string();
+        let release = false;
+        let verbose = false;
+
+        let mut python_sys_path = Vec::new();
+        python_sys_path.push(PathBuf::from("/test"));
+
+        run(
+            input_file,
+            output_file,
+            module_names,
+            release,
+            verbose,
+            &mut mock_fs,
+            &python_sys_path,
+        ).unwrap();
+
+        let result = mock_fs.read_to_string("/test/main_inlined.py").unwrap();
+
+        // The expected output should have inlined content indented to match
+        // the import statement's indentation level (4 spaces in this case)
+        let expected = r#"def my_function():
+    # ↓↓↓ inlined submodule: mylib.environment
+    import os
+
+    API_KEY = os.getenv("API_KEY") or "default-key"
+    ANOTHER_CONSTANT = "value"
+
+    def helper_function():
+        return API_KEY
+    # ↑↑↑ inlined submodule: mylib.environment
+    return API_KEY
+
+if __name__ == '__main__':
+    print(my_function())
+"#;
+
+        assert_eq!(result, expected, "\n\nExpected:\n{}\n\nGot:\n{}\n", expected, result);
+    }
+
+    #[test]
+    fn test_multiline_import_removal() {
+        // This test reproduces the bug where multi-line import statements
+        // are not completely removed, leaving dangling import names
+        let mut mock_fs = VirtualFileSystem::new();
+        mock_fs.mkdir_p("/test/mylib").unwrap();
+
+        // Module with some constants
+        let environment_py = r#"import os
+
+API_KEY = os.getenv("API_KEY") or "default-key"
+ANOTHER_KEY = os.getenv("ANOTHER") or "other"
+THIRD_KEY = "third"
+"#;
+        mock_fs.write("/test/mylib/environment.py", environment_py).unwrap();
+
+        // Main file with multi-line import statement
+        let main_py = r#"from mylib.environment import (
+    API_KEY,
+    ANOTHER_KEY,
+    THIRD_KEY,
+)
+
+def my_function():
+    return API_KEY
+
+if __name__ == '__main__':
+    print(my_function())
+"#;
+        mock_fs.write("/test/main.py", main_py).unwrap();
+
+        let input_file = PathBuf::from("/test/main.py");
+        let output_file = PathBuf::from("/test/main_inlined.py");
+        let module_names = "mylib".to_string();
+        let release = false;
+        let verbose = false;
+
+        let mut python_sys_path = Vec::new();
+        python_sys_path.push(PathBuf::from("/test"));
+
+        run(
+            input_file,
+            output_file,
+            module_names,
+            release,
+            verbose,
+            &mut mock_fs,
+            &python_sys_path,
+        ).unwrap();
+
+        let result = mock_fs.read_to_string("/test/main_inlined.py").unwrap();
+
+        // The expected output should have the entire multi-line import replaced,
+        // with NO dangling import names or parentheses
+        let expected = r#"# ↓↓↓ inlined submodule: mylib.environment
+import os
+
+API_KEY = os.getenv("API_KEY") or "default-key"
+ANOTHER_KEY = os.getenv("ANOTHER") or "other"
+THIRD_KEY = "third"
+# ↑↑↑ inlined submodule: mylib.environment
+
+def my_function():
+    return API_KEY
+
+if __name__ == '__main__':
+    print(my_function())
+"#;
+
+        assert_eq!(result, expected, "\n\nExpected:\n{}\n\nGot:\n{}\n", expected, result);
+    }
+
+    #[test]
+    fn test_function_scoped_import_indentation() {
+        // This test reproduces the bug where imports inside function bodies
+        // cause inlined content to be at wrong indentation level (0 instead of function indent)
+        let mut mock_fs = VirtualFileSystem::new();
+        mock_fs.mkdir_p("/test/mylib").unwrap();
+
+        // Module with module-level code (indentation 0 in source file)
+        let llm_response_py = r#"from dataclasses import dataclass
+
+@dataclass
+class LLMResponse:
+    """Response from LLM API."""
+    content: str
+    model: str
+
+    def from_api_response(self, api_data):
+        return LLMResponse(
+            content=api_data.get("content", ""),
+            model=api_data.get("model", "unknown")
+        )
+"#;
+        mock_fs.write("/test/mylib/llm_response.py", llm_response_py).unwrap();
+
+        // Main file with function-scoped imports (indented inside function body)
+        let main_py = r#"def call_llm_light(prompt: str, temperature: float = 0.0):
+    """Call LLM using light provider config."""
+    from mylib.llm_response import LLMResponse
+
+    payload = {
+        "model": "test-model",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+
+    # Simulated API response
+    api_data = {"content": "Hello, world!", "model": "test-model"}
+    return LLMResponse.from_api_response(api_data)
+
+if __name__ == '__main__':
+    result = call_llm_light("Hello!")
+    print(result)
+"#;
+        mock_fs.write("/test/main.py", main_py).unwrap();
+
+        let input_file = PathBuf::from("/test/main.py");
+        let output_file = PathBuf::from("/test/main_inlined.py");
+        let module_names = "mylib".to_string();
+        let release = false;
+        let verbose = false;
+
+        let mut python_sys_path = Vec::new();
+        python_sys_path.push(PathBuf::from("/test"));
+
+        run(
+            input_file,
+            output_file,
+            module_names,
+            release,
+            verbose,
+            &mut mock_fs,
+            &python_sys_path,
+        ).unwrap();
+
+        let result = mock_fs.read_to_string("/test/main_inlined.py").unwrap();
+
+        // The expected output should have inlined content indented at the same level
+        // as the import statement (4 spaces), NOT at module level (0 spaces)
+        let expected = r#"def call_llm_light(prompt: str, temperature: float = 0.0):
+    """Call LLM using light provider config."""
+    # ↓↓↓ inlined submodule: mylib.llm_response
+    from dataclasses import dataclass
+
+    @dataclass
+    class LLMResponse:
+        """Response from LLM API."""
+        content: str
+        model: str
+
+        def from_api_response(self, api_data):
+            return LLMResponse(
+                content=api_data.get("content", ""),
+                model=api_data.get("model", "unknown")
+            )
+    # ↑↑↑ inlined submodule: mylib.llm_response
+
+    payload = {
+        "model": "test-model",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+
+    # Simulated API response
+    api_data = {"content": "Hello, world!", "model": "test-model"}
+    return LLMResponse.from_api_response(api_data)
+
+if __name__ == '__main__':
+    result = call_llm_light("Hello!")
+    print(result)
+"#;
+
+        assert_eq!(result, expected, "\n\nExpected:\n{}\n\nGot:\n{}\n", expected, result);
     }
 }
