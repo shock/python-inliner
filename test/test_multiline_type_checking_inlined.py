@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 def get_provider_name() -> str:
     """Get the provider name."""
     return "LiteLLM Provider"
+
 # ↑↑↑ inlined submodule: modules.provider_config
 
 def main():

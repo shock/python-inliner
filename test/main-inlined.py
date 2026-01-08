@@ -9,6 +9,7 @@ class Class2:
 
     def __init__(self):
         self.name = "Class2"
+
 # ↑↑↑ inlined submodule: .class2
 # This should NOT be inlined since 'json' is not in the module list
 import json
@@ -19,6 +20,7 @@ class Class1:
         self.class2 = Class2()
         # Use json to test if it gets inlined
         self.data = json.dumps({"name": "Class1"})
+
 # ↑↑↑ inlined submodule: modules.class1
 from tacos import Taco
 from tacos.hot_sauce import HotSauce
@@ -29,6 +31,7 @@ def main():
     class Class3:
         def __init__(self):
             self.name = "Class3"
+
     # ↑↑↑ inlined submodule: modules.submodules.class3
     c1 = Class1()
     print(c1.name)
