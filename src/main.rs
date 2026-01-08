@@ -420,7 +420,20 @@ fn post_process_imports(content: &str) -> String {
     let mut imports = HashSet::new();
     let mut header_content = Vec::new();
     let mut other_content = Vec::new();
-    let import_regex = Regex::new(r"(?m)^\s*(import|from)\s+").unwrap();
+
+    // Improved regex that validates actual import statements:
+    // - "from module.name import something" - requires valid module name and 'import' keyword
+    // - "import module.name" - requires valid module name after import
+    // Module names must start with letter/underscore and contain word chars, dots, and underscores
+    let import_regex = Regex::new(
+        r"^\s*(?:from\s+[a-zA-Z_][\w.]*\s+import\s+|import\s+[a-zA-Z_][\w.,\s*]+)"
+    ).unwrap();
+
+    // Filter out JavaScript-style imports (import X from '...'), which Python never uses
+    let js_import_filter = Regex::new(
+        "^\\s*import\\s+[\\w.*]+\\s+from\\s+['\"]"
+    ).unwrap();
+
     let shebang_regex = Regex::new(r"^#!").unwrap();
 
     let mut lines = content.lines().collect::<Vec<&str>>();
@@ -434,7 +447,7 @@ fn post_process_imports(content: &str) -> String {
     }
 
     for line in lines {
-        if import_regex.is_match(line) {
+        if import_regex.is_match(line) && !js_import_filter.is_match(line) {
             imports.insert(line.trim_start().to_string());
         } else {
             other_content.push(line.to_string());
@@ -540,6 +553,56 @@ import sys
 def main():
     print('Hello')
 
+
+if __name__ == '__main__':
+    main()
+"#;
+
+        assert_eq!(post_process_imports(input), expected);
+    }
+
+    #[test]
+    fn test_javascript_import_filtering() {
+        // This test verifies that JavaScript-style imports embedded in Python code
+        // are not mistakenly detected as Python imports
+        let input = r#"#!/usr/bin/env python3
+import os
+from sys import path
+
+def generate_html(is_markdown):
+    mermaid_script = ""
+    if is_markdown:
+        mermaid_script = """
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    </script>"""
+    return f"<html>{mermaid_script}</html>"
+
+def main():
+    import re
+
+if __name__ == '__main__':
+    main()
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+
+from sys import path
+import os
+import re
+
+def generate_html(is_markdown):
+    mermaid_script = ""
+    if is_markdown:
+        mermaid_script = """
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    </script>"""
+    return f"<html>{mermaid_script}</html>"
+
+def main():
 
 if __name__ == '__main__':
     main()
