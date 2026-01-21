@@ -30,9 +30,28 @@ clean:
 		$(CARGO) clean
 
 test: debug
+	@echo "=== Running Python Inliner Tests ==="
+	@echo ""
+	@echo "Step 1: Cleaning up previous build..."
 	rm -f test/main-inlined.py
-	$(CARGO) run test/main.py test/main-inlined.py tacos,modules
+	@echo ""
+	@echo "Step 2: Running inliner in release mode..."
+	PYTHONPATH=test/packages:test/aliens:test $(CARGO) run test/main.py test/main-inlined.py tacos,modules,aliens -r
+	@echo ""
+	@echo "Step 3: Verifying inlined script produces correct output..."
+	@cd test && python3 main-inlined.py > actual_output.txt 2>&1
+	@if diff -q test/expected_output.txt test/actual_output.txt > /dev/null 2>&1; then \
+		echo "✓ Functional verification PASSED - inlined script output matches expected"; \
+	else \
+		echo "✗ Functional verification FAILED - output differs:"; \
+		diff test/expected_output.txt test/actual_output.txt || true; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "Step 4: Running TYPE_CHECKING test..."
 	./test/test_type_checking_bug.sh
+	@echo ""
+	@echo "Step 5: Running unit tests..."
 	$(CARGO) test
 
 install: release

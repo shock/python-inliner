@@ -4,3 +4,5 @@
 target/
 __pycache__/
 http_request_error.log
+test/actual_output.txt
+test/main-inlined.py

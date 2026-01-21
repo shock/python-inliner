@@ -9,7 +9,7 @@ Works with monorepos, cross-repository imports, and third-party source-only pack
 - **🔍 Smart Import Resolution**: Automatically searches Python's `sys.path` for modules
 - **📦 Package Support**: Handles packages with `__init__.py` files and nested modules
 - **🔄 Circular Import Detection**: Prevents infinite recursion with circular import tracking
-- **⚡ Release Mode**: Consolidates imports and removes debug comments for production use
+- **⚡ Release Mode**: Production-ready output with consolidated imports, stripped docstrings/comments, and minimized file size
 - **🔧 Editable Install Support**: Detects and processes pip editable installations
 - **📝 Debug Mode**: Verbose output for debugging complex import chains
 - **🎯 Flexible Targeting**: Specify specific modules to inline or default to current directory
@@ -61,7 +61,14 @@ Only inlines imports from the specified modules (`modules`, `tacos`, `aliens`). 
 python-inliner -r input.py output.py
 ```
 
-Consolidates all imports at the top and removes debug comments for cleaner output.
+Produces production-ready, minimized output with:
+- **Import consolidation**: All imports moved to the top, duplicates removed
+- **Docstring removal**: Function and class docstrings stripped (preserves variable assignments and f-strings)
+- **Comment removal**: All comments removed (preserves shebang lines)
+- **Blank line removal**: All unnecessary whitespace eliminated
+- **Debug comment removal**: Inlining markers (↓↓↓, ↑↑↑, →→) stripped
+
+Perfect for deployment where smaller file size and IP protection are priorities.
 
 ### Verbose Debugging
 
@@ -212,13 +219,33 @@ Handles complex package structures:
 
 Automatically detects pip editable installations by parsing `direct_url.json` files in `site-packages` directories, ensuring local development packages are properly inlined.
 
-### Import Consolidation
+### Release Mode Processing
 
-In release mode (`-r`), the tool:
-- Collects all imports and places them at the top of the file
+Release mode (`-r`) applies a series of optimizations to produce production-ready output:
+
+**1. Import Consolidation**
+- Collects all imports and places them at the top of the file (after shebang)
 - Removes duplicate imports
-- Preserves shebang lines
 - Maintains proper import ordering
+
+**2. Docstring Removal**
+- Strips all module, class, and function docstrings
+- Preserves triple-quoted strings assigned to variables (e.g., `TEMPLATE = """..."""`)
+- Preserves f-strings (e.g., `f"""string {var}"""`)
+- Ideal for IP protection while maintaining functionality
+
+**3. Comment Removal**
+- Removes all inline and whole-line comments
+- Preserves shebang lines (`#!/usr/bin/env python3`)
+- Handles comments inside strings correctly
+
+**4. Blank Line Removal**
+- Eliminates all blank lines (including whitespace-only lines)
+- Produces compact, minimal output
+
+**5. Debug Marker Removal**
+- Strips inlining markers (↓↓↓, ↑↑↑, →→)
+- Creates clean production code
 
 ## Use Cases
 
@@ -230,9 +257,9 @@ Create single-file Python scripts for easier distribution without complex module
 
 Simplify deployment by bundling all required modules into a single executable script.
 
-### Code Obfuscation
+### IP Protection
 
-Generate consolidated files that are harder to reverse-engineer (when combined with other tools).
+Release mode removes all documentation and comments, making code harder to understand and reverse-engineer while maintaining full functionality.
 
 ### Testing
 
@@ -261,7 +288,7 @@ python-inliner [FLAGS] <input-file> <output-file> [module-names]
 
 FLAGS:
     -h, --help       Prints help information
-    -r, --release    Suppress comments in the output, and consolidate imports
+    -r, --release    Production mode: consolidate imports, strip docstrings/comments/blank lines
     -V, --version    Prints version information
     -v, --verbose    Print verbose debug information
 

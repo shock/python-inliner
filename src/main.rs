@@ -113,6 +113,9 @@ fn run<FS: FileSystem>(input_file: PathBuf, output_file: PathBuf, module_names: 
     let mut content = inline_imports(fs, &python_sys_path, &input_file, &module_names, &mut HashSet::new(), &opt)?;
     if release {
         content = post_process_imports(&content);
+        content = strip_docstrings(&content);
+        content = strip_comments(&content);
+        content = strip_blank_lines(&content);
     }
     fs.write(&output_file, content)?;
     println!("Inlined content written to {:?}", output_file);
@@ -462,6 +465,228 @@ fn post_process_imports(content: &str) -> String {
     result.push('\n');
     result.push_str(&other_content.join("\n"));
     result.push('\n');
+    result
+}
+
+/// Strip docstrings from Python code.
+/// Removes function and class docstrings (triple-quoted strings that are NOT assigned to variables).
+/// Preserves variable assignments that use triple-quoted strings.
+fn strip_docstrings(content: &str) -> String {
+    // Patterns to check what comes before a triple-quoted string
+    // Assignment pattern now handles: var=, self.attr=, obj.attr.nested=, etc.
+    let assignment_pattern = Regex::new(r"^\s*[a-zA-Z_]\w*(\.[a-zA-Z_]\w*)*\s*=").unwrap();
+    let import_pattern = Regex::new(r"^\s*(from|import)\s+").unwrap();
+    let decorator_pattern = Regex::new(r"^\s*@").unwrap();
+
+    let mut result = String::new();
+    let mut last_pos = 0;
+    let bytes = content.as_bytes();
+    let mut pos = 0;
+
+    while pos < bytes.len() {
+        // Check for triple-quoted strings (""" or ''')
+        if pos + 2 < bytes.len() {
+            let is_triple_double = bytes[pos] == b'"' && bytes[pos + 1] == b'"' && bytes[pos + 2] == b'"';
+            let is_triple_single = bytes[pos] == b'\'' && bytes[pos + 1] == b'\'' && bytes[pos + 2] == b'\'';
+
+            if is_triple_double || is_triple_single {
+                let quote_byte = bytes[pos];
+                let start_pos = pos;
+
+                // Make sure this is exactly 3 quotes, not 4+
+                if pos + 3 < bytes.len() && bytes[pos + 3] == quote_byte {
+                    // This is 4+ quotes, skip the first one and continue
+                    pos += 1;
+                    continue;
+                }
+
+                // Find the closing triple quote
+                let mut end_pos = pos + 3;
+                let mut found_closing = false;
+
+                while end_pos + 2 < bytes.len() {
+                    if bytes[end_pos] == quote_byte && bytes[end_pos + 1] == quote_byte && bytes[end_pos + 2] == quote_byte {
+                        // Make sure it's exactly 3 quotes, not part of 4+
+                        let has_fourth = end_pos + 3 < bytes.len() && bytes[end_pos + 3] == quote_byte;
+                        if !has_fourth {
+                            end_pos += 3;
+                            found_closing = true;
+                            break;
+                        }
+                    }
+                    end_pos += 1;
+                }
+
+                if !found_closing {
+                    // No closing quote found, treat as regular content
+                    pos += 1;
+                    continue;
+                }
+
+                // Check if this should be preserved
+                let before_string = &content[..start_pos];
+                let line_start = before_string.rfind('\n').map(|p| p + 1).unwrap_or(0);
+                let line_before = &content[line_start..start_pos];
+
+                let trimmed = line_before.trim_end();
+                let is_f_string = trimmed.ends_with('f');
+
+                let should_preserve = assignment_pattern.is_match(line_before)
+                    || import_pattern.is_match(line_before)
+                    || decorator_pattern.is_match(line_before)
+                    || is_f_string;
+
+                // Copy everything from last position to start of this string
+                result.push_str(&content[last_pos..start_pos]);
+
+                if should_preserve {
+                    // Keep the triple-quoted string
+                    result.push_str(&content[start_pos..end_pos]);
+                }
+                // else: skip it (it's a docstring) - just don't add it to result
+
+                last_pos = end_pos;
+                pos = end_pos;
+                continue;
+            }
+        }
+
+        pos += 1;
+    }
+
+    // Copy any remaining content
+    result.push_str(&content[last_pos..]);
+
+    result
+}
+
+fn strip_comments(content: &str) -> String {
+    let shebang_regex = Regex::new(r"^#!").unwrap();
+
+    let mut result = String::new();
+    let mut lines = content.lines().enumerate().peekable();
+    let mut in_multiline_string = None::<char>; // Track if we're inside a multi-line triple-quoted string
+
+    while let Some((line_num, line)) = lines.next() {
+        let trimmed = line.trim_start();
+
+        // Preserve shebang line (only on first line)
+        if line_num == 0 && shebang_regex.is_match(trimmed) {
+            result.push_str(line);
+            if lines.peek().is_some() {
+                result.push('\n');
+            }
+            continue;
+        }
+
+        // Find inline comment position (not inside strings)
+        let mut in_string = in_multiline_string; // Start with multi-line state
+        let mut chars = line.chars().peekable();
+        let mut comment_pos = None;
+        let mut i = 0;
+
+        while let Some(&ch) = chars.peek() {
+            let pos = i;
+            i += ch.len_utf8();
+            chars.next();
+
+            // Check for triple quotes
+            if ch == '"' || ch == '\'' {
+                if let Some(&next1) = chars.peek() {
+                    if next1 == ch {
+                        chars.next();
+                        if let Some(&next2) = chars.peek() {
+                            if next2 == ch {
+                                chars.next();
+                                // Triple quote
+                                if in_string == Some(ch) {
+                                    in_string = None;
+                                    in_multiline_string = None;
+                                } else if in_string.is_none() {
+                                    in_string = Some(ch);
+                                    in_multiline_string = Some(ch);
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                // Single/double quote (only if not in multi-line string)
+                if in_multiline_string.is_none() {
+                    if in_string.is_none() {
+                        in_string = Some(ch);
+                    } else if in_string == Some(ch) {
+                        in_string = None;
+                    }
+                }
+            } else if ch == '#' && in_string.is_none() {
+                // Found a comment outside a string
+                comment_pos = Some(pos);
+                break;
+            }
+        }
+
+        // Add the line up to the comment (or whole line if no comment)
+        // Skip whole-line comments (if comment starts at position 0 or only whitespace)
+        if let Some(pos) = comment_pos {
+            let before_comment = &line[..pos];
+            if before_comment.trim().is_empty() {
+                // This is a whole-line comment, skip it
+            } else {
+                // Inline comment, keep the part before it
+                let trimmed_content = before_comment.trim_end();
+                if !trimmed_content.is_empty() {
+                    result.push_str(trimmed_content);
+                    if lines.peek().is_some() {
+                        result.push('\n');
+                    }
+                }
+            }
+        } else {
+            if !line.trim().is_empty() {
+                result.push_str(line);
+                if lines.peek().is_some() {
+                    result.push('\n');
+                }
+            }
+        }
+    }
+
+    // Preserve final newline if original content ended with one
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+
+    result
+}
+
+/// Strip all blank lines from Python code.
+/// Removes both single blank lines and multiple consecutive blank lines.
+fn strip_blank_lines(content: &str) -> String {
+    let mut result = String::new();
+    let mut lines = content.lines().peekable();
+
+    while let Some(line) = lines.next() {
+        let trimmed = line.trim();
+
+        // Skip blank lines
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        result.push_str(line);
+
+        if lines.peek().is_some() {
+            result.push('\n');
+        }
+    }
+
+    // Preserve final newline if original content ended with one
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+
     result
 }
 
@@ -937,6 +1162,382 @@ if __name__ == '__main__':
 
 if __name__ == '__main__':
     print(process_data())
+"#;
+
+        assert_eq!(result, expected, "\n\nExpected:\n{}\n\nGot:\n{}\n", expected, result);
+    }
+
+    #[test]
+    fn test_strip_docstrings_simple() {
+        // Test basic function and class docstrings
+        let input = r##""""Module docstring."""
+
+def func():
+    """Function docstring."""
+    pass
+
+class MyClass:
+    """Class docstring."""
+    pass
+"##;
+
+        // Note: strip_docstrings leaves blank lines (including indented ones) behind - that's OK!
+        // strip_blank_lines() will clean them up in the full release mode flow
+        let expected = "\n\ndef func():\n    \n    pass\n\nclass MyClass:\n    \n    pass\n";
+
+        assert_eq!(strip_docstrings(input), expected);
+    }
+
+    #[test]
+    fn test_strip_docstrings_preserves_variable_assignment() {
+        // Test that variable assignments with triple quotes are preserved
+        let input = r##""""Module docstring."""
+
+MY_VAR = """This is assigned to a variable and should be preserved."""
+
+def func():
+    """Function docstring."""
+    pass
+"##;
+
+        let expected = "\n\nMY_VAR = \"\"\"This is assigned to a variable and should be preserved.\"\"\"\n\ndef func():\n    \n    pass\n";
+
+        assert_eq!(strip_docstrings(input), expected);
+    }
+
+    #[test]
+    fn test_strip_docstrings_f_string_preserved() {
+        // Test that f-strings with triple quotes are preserved
+        let input = r##""""Module docstring."""
+
+def func():
+    """Function docstring."""
+    some_var = f"""long
+string {self.name} with interpolation
+"""
+    pass
+"##;
+
+        let expected = "\n\ndef func():\n    \n    some_var = f\"\"\"long\nstring {self.name} with interpolation\n\"\"\"\n    pass\n";
+
+        assert_eq!(strip_docstrings(input), expected);
+    }
+
+    #[test]
+    fn test_strip_docstrings_single_quotes() {
+        // Test that single triple quotes are also removed as docstrings
+        let input = r##""""Module docstring."""
+
+def func():
+    '''Function docstring with single quotes.'''
+    pass
+
+class MyClass:
+    '''Class docstring with single quotes.'''
+    pass
+"##;
+
+        let expected = "\n\ndef func():\n    \n    pass\n\nclass MyClass:\n    \n    pass\n";
+
+        assert_eq!(strip_docstrings(input), expected);
+    }
+
+    #[test]
+    fn test_strip_docstrings_preserves_attribute_assignment() {
+        // Test that attribute assignments (self.attr, obj.attr) with triple quotes are preserved
+        let input = r##""""Module docstring."""
+
+class MyClass:
+    def __init__(self):
+        """Init docstring."""
+        self.template = """
+        This should be preserved.
+        """
+        pass
+"##;
+
+        let expected = "\n\nclass MyClass:\n    def __init__(self):\n        \n        self.template = \"\"\"\n        This should be preserved.\n        \"\"\"\n        pass\n";
+
+        assert_eq!(strip_docstrings(input), expected);
+    }
+
+    #[test]
+    fn test_strip_docstrings_no_docstrings() {
+        // Test code without docstrings
+        let input = r#"def func():
+    pass
+
+class MyClass:
+    pass
+"#;
+
+        assert_eq!(strip_docstrings(input), input);
+    }
+
+    #[test]
+    fn test_strip_comments_whole_line() {
+        // Test removing whole-line comments
+        let input = r#"#!/usr/bin/env python3
+# This is a comment
+import sys
+
+# Another comment
+def main():
+    pass
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+import sys
+def main():
+    pass
+"#;
+
+        assert_eq!(strip_comments(input), expected);
+    }
+
+    #[test]
+    fn test_strip_comments_inline() {
+        // Test removing inline comments
+        let input = r#"#!/usr/bin/env python3
+import sys  # This is an inline comment
+
+def main():
+    pass  # Another inline comment
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+import sys
+def main():
+    pass
+"#;
+
+        assert_eq!(strip_comments(input), expected);
+    }
+
+    #[test]
+    fn test_strip_comments_preserves_strings_with_hash() {
+        // Test that comments inside strings are preserved
+        let input = r#"def func():
+    s = "This # is not a comment"
+    s2 = 'This # is also not a comment'
+    pass
+"#;
+
+        let expected = r#"def func():
+    s = "This # is not a comment"
+    s2 = 'This # is also not a comment'
+    pass
+"#;
+
+        assert_eq!(strip_comments(input), expected);
+    }
+
+    #[test]
+    fn test_strip_comments_preserves_triple_quoted_strings() {
+        // Test that triple-quoted strings with # are preserved
+        let input = r#"MY_VAR = """
+This string contains # symbols that are not comments.
+They should be preserved.
+"""
+"#;
+
+        // # symbols inside triple-quoted strings should be preserved
+        let expected = r#"MY_VAR = """
+This string contains # symbols that are not comments.
+They should be preserved.
+"""
+"#;
+
+        assert_eq!(strip_comments(input), expected);
+    }
+
+    #[test]
+    fn test_strip_comments_no_comments() {
+        // Test code without comments
+        let input = r#"#!/usr/bin/env python3
+import sys
+
+def main():
+    pass
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+import sys
+def main():
+    pass
+"#;
+
+        assert_eq!(strip_comments(input), expected);
+    }
+
+    #[test]
+    fn test_strip_blank_lines_single() {
+        // Test removing single blank lines
+        let input = r#"#!/usr/bin/env python3
+
+import sys
+
+def main():
+    pass
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+import sys
+def main():
+    pass
+"#;
+
+        assert_eq!(strip_blank_lines(input), expected);
+    }
+
+    #[test]
+    fn test_strip_blank_lines_multiple() {
+        // Test removing multiple consecutive blank lines
+        let input = r#"#!/usr/bin/env python3
+
+
+import sys
+
+
+def main():
+
+
+    pass
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+import sys
+def main():
+    pass
+"#;
+
+        assert_eq!(strip_blank_lines(input), expected);
+    }
+
+    #[test]
+    fn test_strip_blank_lines_no_blank_lines() {
+        // Test code without blank lines
+        let input = r#"#!/usr/bin/env python3
+import sys
+def main():
+    pass
+"#;
+
+        assert_eq!(strip_blank_lines(input), input);
+    }
+
+    #[test]
+    fn test_strip_blank_lines_whitespace_only() {
+        // Test that lines with only whitespace are removed
+        let input = r#"#!/usr/bin/env python3
+
+import sys
+
+    def main():
+    	pass
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+import sys
+    def main():
+    	pass
+"#;
+
+        assert_eq!(strip_blank_lines(input), expected);
+    }
+
+    #[test]
+    fn test_release_mode_complete_flow() {
+        // Integration test for complete release mode flow with docstrings, comments, and blank lines
+        let mut mock_fs = VirtualFileSystem::new();
+        mock_fs.mkdir_p("/test/mylib").unwrap();
+
+        // Module with docstrings, comments, and blank lines
+        let mylib_py = r##""""My library module."""
+
+# This is a module-level comment
+import sys
+
+
+MY_VAR = """This should be preserved."""
+
+
+class MyClass:
+    """This is a class docstring - should be removed."""
+
+    # This is a comment about __init__
+    def __init__(self):
+        """Initialize the class."""
+        self.name = "MyClass"
+
+
+def my_func():
+    """This is a function docstring - should be removed."""
+    # Inline comment
+    return "Hello"
+
+
+# Another module-level comment
+"##;
+        mock_fs.write("/test/mylib/mylib.py", mylib_py).unwrap();
+
+        // Main file with various comments and docstrings
+        let main_py = r##"#!/usr/bin/env python3
+"""Main script for testing."""
+
+# Import statement
+from mylib.mylib import MyClass
+
+
+def main():
+    """Main entry point."""
+    # Create instance
+    obj = MyClass()
+    print(obj.name)
+
+
+if __name__ == '__main__':
+    # Run main
+    main()
+"##;
+        mock_fs.write("/test/main.py", main_py).unwrap();
+
+        let input_file = PathBuf::from("/test/main.py");
+        let output_file = PathBuf::from("/test/main_inlined.py");
+        let module_names = "mylib".to_string();
+        let release = true;
+        let verbose = false;
+
+        let mut python_sys_path = Vec::new();
+        python_sys_path.push(PathBuf::from("/test"));
+
+        run(
+            input_file,
+            output_file,
+            module_names,
+            release,
+            verbose,
+            &mut mock_fs,
+            &python_sys_path,
+        ).unwrap();
+
+        let result = mock_fs.read_to_string("/test/main_inlined.py").unwrap();
+
+        // Expected: shebang preserved, all docstrings removed, all comments removed,
+        // all blank lines removed, imports consolidated and sorted, mylib inlined
+        let expected = r#"#!/usr/bin/env python3
+import sys
+MY_VAR = """This should be preserved."""
+class MyClass:
+    def __init__(self):
+        self.name = "MyClass"
+def my_func():
+    return "Hello"
+def main():
+    obj = MyClass()
+    print(obj.name)
+if __name__ == '__main__':
+    main()
 "#;
 
         assert_eq!(result, expected, "\n\nExpected:\n{}\n\nGot:\n{}\n", expected, result);

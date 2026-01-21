@@ -1,0 +1,25 @@
+=== Python Inliner Integration Test ===
+
+Testing Class1 with nested Class2 dependency:
+  c1.name: Class1
+  c1.class2.name: Class2
+  c1.data: {"name": "Class1"}
+  c1.template (first 50 chars): This is a template string assigned to sel...
+  LONG_DESCRIPTION (first 50 chars): This is a long description assigned to a variable....
+
+Testing Class3 from submodules:
+  c3.name: Class3
+
+Testing Taco package:
+  Taco: Carnitas
+
+Testing HotSauce from tacos package:
+  HotSauce: Habanero
+
+Testing Alien:
+  Alien: Zorgon
+
+Verifying JSON functionality:
+  Parsed data: {'name': 'Class1'}
+
+=== All Tests Passed ===
