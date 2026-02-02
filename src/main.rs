@@ -438,6 +438,7 @@ fn post_process_imports(content: &str) -> String {
     ).unwrap();
 
     let shebang_regex = Regex::new(r"^#!").unwrap();
+    let pep723_start_regex = Regex::new(r"^#\s*///").unwrap();
 
     let mut lines = content.lines().collect::<Vec<&str>>();
 
@@ -446,6 +447,37 @@ fn post_process_imports(content: &str) -> String {
             header_content.push(first_line.to_string());
             header_content.push("\n".to_string());
             lines.remove(0);
+        }
+    }
+
+    // Check for and extract PEP 723 inline script metadata block
+    if !lines.is_empty() {
+        let first_line_after_shebang = lines[0].trim_start();
+        if pep723_start_regex.is_match(first_line_after_shebang) {
+            // Found PEP 723 start marker
+            let mut idx = 0;
+
+            while idx < lines.len() {
+                let line = lines[idx];
+                let trimmed = line.trim_start();
+
+                if pep723_start_regex.is_match(trimmed) {
+                    // Check if this is the end marker (just "# ///" or "#///" with nothing after)
+                    let is_end_marker = trimmed == "# ///" || trimmed == "#///";
+                    if is_end_marker && !header_content.is_empty() {
+                        // End of PEP 723 block
+                        header_content.push(line.to_string());
+                        idx += 1;
+                        break;
+                    }
+                }
+
+                header_content.push(line.to_string());
+                idx += 1;
+            }
+
+            // Remove the PEP 723 block from the remaining lines
+            lines = lines[idx..].to_vec();
         }
     }
 
@@ -461,8 +493,22 @@ fn post_process_imports(content: &str) -> String {
     result.push_str(&header_content.join("\n"));
     let mut imports_vec: Vec<String> = imports.into_iter().collect();
     imports_vec.sort();
-    result.push_str(&imports_vec.join("\n"));
-    result.push('\n');
+
+    // Check if header contains a PEP 723 block (looks for "# ///" marker)
+    let has_pep723 = header_content.iter().any(|line| line.contains("# ///"));
+
+    if !imports_vec.is_empty() {
+        // Add extra blank line after header if it contains PEP 723 block
+        if has_pep723 {
+            result.push('\n');
+        }
+        result.push_str(&imports_vec.join("\n"));
+        result.push('\n');
+    } else if has_pep723 {
+        // No imports but PEP 723 block exists - add blank line after it
+        result.push('\n');
+    }
+
     result.push_str(&other_content.join("\n"));
     result.push('\n');
     result
@@ -562,16 +608,50 @@ fn strip_docstrings(content: &str) -> String {
 
 fn strip_comments(content: &str) -> String {
     let shebang_regex = Regex::new(r"^#!").unwrap();
+    let pep723_start_regex = Regex::new(r"^#\s*///").unwrap(); // Match # /// with optional text after
 
     let mut result = String::new();
     let mut lines = content.lines().enumerate().peekable();
     let mut in_multiline_string = None::<char>; // Track if we're inside a multi-line triple-quoted string
+    let mut in_pep723_block = false; // Track if we're inside a PEP 723 metadata block
 
     while let Some((line_num, line)) = lines.next() {
         let trimmed = line.trim_start();
 
         // Preserve shebang line (only on first line)
         if line_num == 0 && shebang_regex.is_match(trimmed) {
+            result.push_str(line);
+            if lines.peek().is_some() {
+                result.push('\n');
+            }
+            continue;
+        }
+
+        // Handle PEP 723 inline script metadata blocks
+        if pep723_start_regex.is_match(trimmed) {
+            // Check if this is the end marker (just "# ///" with nothing after, or only whitespace)
+            let is_end_marker = trimmed == "# ///" || trimmed == "#///";
+            if in_pep723_block && is_end_marker {
+                // End of PEP 723 block
+                in_pep723_block = false;
+                result.push_str(line);
+                if lines.peek().is_some() {
+                    result.push('\n');
+                }
+                continue;
+            } else if !in_pep723_block {
+                // Start of PEP 723 block
+                in_pep723_block = true;
+                result.push_str(line);
+                if lines.peek().is_some() {
+                    result.push('\n');
+                }
+                continue;
+            }
+        }
+
+        // Preserve all lines inside PEP 723 block (including comments)
+        if in_pep723_block {
             result.push_str(line);
             if lines.peek().is_some() {
                 result.push('\n');
@@ -1371,6 +1451,40 @@ def main():
     }
 
     #[test]
+    fn test_strip_comments_preserves_pep723_block() {
+        // Test that PEP 723 inline script metadata blocks are preserved
+        let input = r#"#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "prompt-toolkit>=3.0.47",
+#     "pydantic>=2.9.1",
+# ]
+# ///
+# This comment should be removed
+import sys
+
+def main():
+    pass  # This comment should also be removed
+"#;
+
+        let expected = r#"#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "prompt-toolkit>=3.0.47",
+#     "pydantic>=2.9.1",
+# ]
+# ///
+import sys
+def main():
+    pass
+"#;
+
+        assert_eq!(strip_comments(input), expected);
+    }
+
+    #[test]
     fn test_strip_blank_lines_single() {
         // Test removing single blank lines
         let input = r#"#!/usr/bin/env python3
@@ -1536,6 +1650,87 @@ def my_func():
 def main():
     obj = MyClass()
     print(obj.name)
+if __name__ == '__main__':
+    main()
+"#;
+
+        assert_eq!(result, expected, "\n\nExpected:\n{}\n\nGot:\n{}\n", expected, result);
+    }
+
+    #[test]
+    fn test_release_mode_preserves_pep723_block() {
+        // Integration test for release mode with PEP 723 inline script metadata block
+        let mut mock_fs = VirtualFileSystem::new();
+        mock_fs.mkdir_p("/test/mylib").unwrap();
+
+        // Simple module
+        let mylib_py = r#"def helper():
+    return "Hello"
+"#;
+        mock_fs.write("/test/mylib/helper.py", mylib_py).unwrap();
+
+        // Main file with PEP 723 block
+        let main_py = r#"#!/usr/bin/env python
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "prompt-toolkit>=3.0.47",
+#     "pydantic>=2.9.1",
+# ]
+# ///
+"""Main script."""
+
+from mylib.helper import helper
+
+
+def main():
+    # This comment should be removed
+    result = helper()
+    print(result)
+
+
+if __name__ == '__main__':
+    # Run main
+    main()
+"#;
+        mock_fs.write("/test/main.py", main_py).unwrap();
+
+        let input_file = PathBuf::from("/test/main.py");
+        let output_file = PathBuf::from("/test/main_inlined.py");
+        let module_names = "mylib".to_string();
+        let release = true;
+        let verbose = false;
+
+        let mut python_sys_path = Vec::new();
+        python_sys_path.push(PathBuf::from("/test"));
+
+        run(
+            input_file,
+            output_file,
+            module_names,
+            release,
+            verbose,
+            &mut mock_fs,
+            &python_sys_path,
+        ).unwrap();
+
+        let result = mock_fs.read_to_string("/test/main_inlined.py").unwrap();
+
+        // Expected: PEP 723 block preserved, shebang preserved, docstrings removed,
+        // other comments removed, blank lines removed, mylib inlined
+        let expected = r#"#!/usr/bin/env python
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "prompt-toolkit>=3.0.47",
+#     "pydantic>=2.9.1",
+# ]
+# ///
+def helper():
+    return "Hello"
+def main():
+    result = helper()
+    print(result)
 if __name__ == '__main__':
     main()
 "#;
